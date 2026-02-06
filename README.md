@@ -48,13 +48,6 @@
 // Or: "Review this function for potential bugs"
 ```
 
-## 💻 Technology Stack
-
-- **Frontend**: HTML (75.5%) with modern, responsive design
-- **Backend**: Python (24.5%) for server-side operations
-- **AI Integration**: puter.js for free AI capabilities
-- **Workspace**: VS Code-inspired interface
-
 ## 🔧 How It Works
 
 1. **Open the Workspace** – Launch Galaxy in your browser
