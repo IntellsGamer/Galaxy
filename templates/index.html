@@ -1,0 +1,3962 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Galaxy + VS Code Workspace</title>
+    <script src="https://js.puter.com/v2/"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.44.0/min/vs/loader.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+
+    <style>
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+      
+      :root {
+        --bg: #0d1117;
+        --sidebar: #010409;
+        --panel: #161b22;
+        --border: #30363d;
+        --text: #c9d1d9;
+        --text-secondary: #8b949e;
+        --accent: #2f81f7;
+        --accent-hover: #58a6ff;
+        --success: #238636;
+        --success-hover: #2ea043;
+        --warning: #d29922;
+        --danger: #f85149;
+        --shadow: 0 8px 24px rgba(0,0,0,0.5);
+      }
+      
+      body {
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans', Helvetica, Arial, sans-serif;
+        background: var(--bg);
+        color: var(--text);
+        height: 100vh;
+        overflow: hidden;
+        font-size: 14px;
+      }
+      
+      .workspace {
+        display: flex;
+        height: 100vh;
+        flex-direction: column;
+      }
+      
+      /* Title Bar */
+      .title-bar {
+        height: 42px;
+        background: var(--sidebar);
+        border-bottom: 1px solid var(--border);
+        display: flex;
+        align-items: center;
+        padding: 0 16px;
+        gap: 24px;
+        -webkit-app-region: drag;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+        z-index: 100;
+      }
+      
+      .title-bar .logo {
+        font-weight: 600;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+      
+      .title-bar .menu {
+        display: flex;
+        gap: 16px;
+        color: var(--text-secondary);
+        font-size: 13px;
+      }
+      
+      .title-bar .menu span:hover {
+        color: var(--text);
+        cursor: pointer;
+      }
+      
+      /* Main Layout */
+      .main-layout {
+        display: flex;
+        flex: 1;
+        overflow: hidden;
+      }
+      
+      /* Activity Bar */
+      .activity-bar {
+        width: 50px;
+        background: var(--sidebar);
+        border-right: 1px solid var(--border);
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        padding: 8px 0;
+        gap: 4px;
+      }
+      
+      .activity-item {
+        width: 48px;
+        height: 48px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        cursor: pointer;
+        border-radius: 8px;
+        color: var(--text-secondary);
+        position: relative;
+        transition: all 0.2s;
+      }
+      
+      .activity-item:hover,
+      .activity-item.active {
+        color: var(--text);
+        background: var(--panel);
+      }
+      
+      .activity-item.active::before {
+        content: '';
+        position: absolute;
+        left: 0;
+        top: 12px;
+        bottom: 12px;
+        width: 3px;
+        background: var(--accent);
+        border-radius: 0 4px 4px 0;
+      }
+      
+      .activity-item .badge {
+        position: absolute;
+        bottom: 8px;
+        right: 8px;
+        background: var(--accent);
+        color: white;
+        font-size: 10px;
+        padding: 2px 5px;
+        border-radius: 10px;
+        font-weight: 600;
+      }
+      
+      /* Sidebar */
+      .sidebar {
+        width: 280px;
+        background: var(--bg);
+        border-right: 1px solid var(--border);
+        display: flex;
+        flex-direction: column;
+      }
+      
+      .sidebar-header {
+        padding: 12px 16px;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        font-size: 11px;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+        color: var(--text-secondary);
+      }
+      
+      .sidebar-actions {
+        display: flex;
+        gap: 8px;
+      }
+      
+      .icon-btn-sm {
+        background: none;
+        border: none;
+        color: var(--text-secondary);
+        cursor: pointer;
+        padding: 4px;
+        border-radius: 4px;
+        font-size: 16px;
+        line-height: 1;
+      }
+      
+      .icon-btn-sm:hover {
+        color: var(--text);
+        background: var(--panel);
+      }
+      
+      /* File Explorer */
+      .file-tree {
+        flex: 1;
+        overflow-y: auto;
+        padding: 8px;
+      }
+      
+      .file-item {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 6px 12px;
+        cursor: pointer;
+        border-radius: 6px;
+        font-size: 13px;
+        color: var(--text-secondary);
+        position: relative;
+      }
+      
+      .file-item:hover {
+        background: var(--panel);
+        color: var(--text);
+      }
+      
+      .file-item.active {
+        background: var(--accent);
+        color: white;
+      }
+      
+      .file-item .icon {
+        font-size: 16px;
+        width: 20px;
+        text-align: center;
+      }
+      
+      .file-item .name {
+        flex: 1;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      
+      .file-item .close {
+        opacity: 0;
+        padding: 2px 6px;
+        border-radius: 4px;
+      }
+      
+      .file-item:hover .close {
+        opacity: 1;
+      }
+      
+      .file-item .close:hover {
+        background: rgba(255, 255, 255, 0.2);
+      }
+      
+      .folder-content {
+        margin-left: 20px;
+        border-left: 1px solid var(--border);
+      }
+      
+      /* Editor Area */
+      .editor-area {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
+      }
+      
+      /* Tab Bar */
+      .tab-bar {
+        display: flex;
+        background: var(--bg);
+        border-bottom: 1px solid var(--border);
+        overflow-x: auto;
+        min-height: 35px;
+      }
+      
+      .tab {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 8px 16px;
+        background: var(--bg);
+        border-right: 1px solid var(--border);
+        cursor: pointer;
+        font-size: 13px;
+        color: var(--text-secondary);
+        min-width: 120px;
+        max-width: 200px;
+        position: relative;
+        transition: all 0.2s;
+      }
+      
+      .tab:hover {
+        background: var(--panel);
+        color: var(--text);
+      }
+      
+      .tab.active {
+        background: var(--panel);
+        color: var(--text);
+        border-bottom: 2px solid var(--accent);
+      }
+      
+      .tab.unsaved::after {
+        content: '●';
+        color: var(--accent);
+        font-size: 8px;
+        margin-left: 4px;
+      }
+      
+      .tab-close {
+        margin-left: auto;
+        opacity: 0;
+        padding: 2px;
+        border-radius: 4px;
+      }
+      
+      .tab:hover .tab-close,
+      .tab.active .tab-close {
+        opacity: 1;
+      }
+      
+      .tab-close:hover {
+        background: var(--danger);
+        color: white;
+      }
+      
+      /* Editor Container */
+      .editor-container {
+        flex: 1;
+        display: flex;
+        overflow: hidden;
+      }
+      
+      .editor-pane {
+        flex: 1;
+        display: none;
+      }
+      
+      .editor-pane.active {
+        display: block;
+      }
+      
+      #monaco-editor {
+        width: 100%;
+        height: 100%;
+      }
+      
+      /* Welcome Page */
+      .welcome-page {
+        display: none;
+        flex: 1;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        padding: 40px;
+        text-align: center;
+      }
+      
+      .welcome-page.active {
+        display: flex;
+      }
+      
+      .welcome-logo {
+        font-size: 64px;
+        margin-bottom: 24px;
+      }
+      
+      .welcome-title {
+        font-size: 24px;
+        font-weight: 600;
+        margin-bottom: 16px;
+      }
+      
+      .welcome-subtitle {
+        color: var(--text-secondary);
+        margin-bottom: 32px;
+      }
+      
+      .welcome-actions {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 16px;
+        max-width: 600px;
+        width: 100%;
+      }
+      
+      .welcome-card {
+        background: var(--panel);
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        padding: 20px;
+        text-align: left;
+        cursor: pointer;
+        transition: all 0.2s;
+      }
+      
+      .welcome-card:hover {
+        border-color: var(--accent);
+        transform: translateY(-2px);
+        box-shadow: var(--shadow);
+      }
+      
+      /* Tooltip */
+      .tooltip {
+        position: relative;
+        display: inline-block;
+      }
+      
+      .tooltip .tooltiptext {
+        visibility: hidden;
+        width: 120px;
+        background-color: var(--panel);
+        color: var(--text);
+        text-align: center;
+        border-radius: 6px;
+        padding: 5px 0;
+        position: absolute;
+        z-index: 1;
+        bottom: 125%;
+        left: 50%;
+        margin-left: -60px;
+        opacity: 0;
+        transition: opacity 0.3s;
+        border: 1px solid var(--border);
+        font-size: 11px;
+      }
+      
+      .tooltip:hover .tooltiptext {
+        visibility: visible;
+        opacity: 1;
+      }
+      
+      .welcome-card h3 {
+        margin-bottom: 8px;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+      
+      .welcome-card p {
+        color: var(--text-secondary);
+        font-size: 13px;
+      }
+      
+      /* Chat Panel */
+      .chat-panel {
+        width: 380px;
+        background: var(--panel);
+        border-left: 1px solid var(--border);
+        display: flex;
+        flex-direction: column;
+      }
+      
+      .chat-header {
+        padding: 12px 16px;
+        border-bottom: 1px solid var(--border);
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+      }
+      
+      .chat-header h3 {
+        font-size: 14px;
+        font-weight: 600;
+      }
+      
+      .chat-toolbar {
+        padding: 8px 16px;
+        border-bottom: 1px solid var(--border);
+        display: flex;
+        gap: 8px;
+      }
+      
+      .model-select {
+        background: var(--bg);
+        border: 1px solid var(--border);
+        color: var(--text);
+        padding: 4px 8px;
+        border-radius: 6px;
+        font-size: 12px;
+        outline: none;
+        cursor: pointer;
+      }
+      
+      .chat-messages {
+        flex: 1;
+        overflow-y: auto;
+        padding: 16px;
+      }
+      
+      .message {
+        margin-bottom: 20px;
+        animation: fadeIn 0.3s ease;
+      }
+      
+      @keyframes fadeIn {
+        from {
+          opacity: 0;
+          transform: translateY(10px);
+        }
+        to {
+          opacity: 1;
+          transform: translateY(0);
+        }
+      }
+      
+      .message-header {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        margin-bottom: 8px;
+        font-size: 12px;
+        color: var(--text-secondary);
+      }
+      
+      .message-avatar {
+        width: 28px;
+        height: 28px;
+        border-radius: 50%;
+        background: var(--accent);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 14px;
+      }
+      
+      .message.assistant .message-avatar {
+        background: var(--success);
+      }
+      
+      .message-author {
+        font-weight: 600;
+        color: var(--text);
+      }
+      
+      .message-content {
+        margin-left: 36px;
+        line-height: 1.6;
+        color: var(--text);
+        font-size: 13px;
+        white-space: pre-wrap;
+        word-wrap: break-word;
+      }
+      
+      /* Code Blocks */
+      .code-block {
+        margin: 12px 0;
+        border-radius: 8px;
+        overflow: hidden;
+        border: 1px solid var(--border);
+        background: var(--bg);
+      }
+      
+      .code-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 8px 12px;
+        background: var(--sidebar);
+        border-bottom: 1px solid var(--border);
+      }
+      
+      .code-lang {
+        font-size: 11px;
+        text-transform: uppercase;
+        color: var(--text-secondary);
+        font-weight: 600;
+      }
+      
+      .code-actions {
+        display: flex;
+        gap: 8px;
+      }
+      
+      .code-btn {
+        background: var(--panel);
+        border: 1px solid var(--border);
+        color: var(--text-secondary);
+        padding: 4px 10px;
+        border-radius: 6px;
+        cursor: pointer;
+        font-size: 11px;
+        display: flex;
+        align-items: center;
+        gap: 4px;
+      }
+      
+      .code-btn:hover {
+        background: var(--bg);
+        color: var(--text);
+        border-color: var(--accent);
+      }
+      
+      .code-content {
+        padding: 16px;
+        overflow-x: auto;
+        font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
+        font-size: 13px;
+        line-height: 1.5;
+      }
+      
+      .code-content pre {
+        margin: 0;
+        white-space: pre;
+      }
+      
+      /* AI File Operations */
+      .ai-file-op {
+        margin: 12px 0;
+        padding: 12px;
+        border-radius: 8px;
+        border: 1px solid var(--border);
+        background: var(--bg);
+      }
+      
+      .ai-file-op.create {
+        border-left: 3px solid var(--success);
+      }
+      
+      .ai-file-op.edit {
+        border-left: 3px solid var(--warning);
+      }
+      
+      .ai-file-op.read {
+        border-left: 3px solid var(--accent);
+      }
+
+      .file-op {
+        display: inline-block;
+        padding: 2px 6px;
+        border-radius: 4px;
+        font-size: 12px;
+        font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
+        background: var(--panel);
+        color: var(--text);
+        border: 1px solid var(--border);
+      }
+
+      .file-op.create {
+        border-color: var(--success);
+        color: var(--success-hover);
+      }
+
+      .file-op.edit {
+        border-color: var(--warning);
+        color: var(--warning);
+      }
+
+      .file-op.read {
+        border-color: var(--accent);
+        color: var(--accent-hover);
+      }
+
+      .file-op.delete {
+        border-color: var(--danger);
+        color: var(--danger);
+      }
+
+      .inline-code {
+        padding: 2px 6px;
+        border-radius: 4px;
+        background: var(--bg);
+        border: 1px solid var(--border);
+        font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
+        font-size: 12px;
+      }
+
+      .md-table-wrap {
+        width: 100%;
+        overflow-x: auto;
+        margin: 8px 0;
+      }
+
+      .md-table {
+        width: 100%;
+        border-collapse: collapse;
+        min-width: 480px;
+        font-size: 13px;
+      }
+
+      .md-table th,
+      .md-table td {
+        border: 1px solid var(--border);
+        padding: 8px 10px;
+        text-align: left;
+        vertical-align: top;
+      }
+
+      .md-table thead th {
+        background: var(--sidebar);
+        color: var(--text);
+      }
+
+      .md-task-list {
+        list-style: none;
+        padding-left: 0;
+      }
+
+      .md-task-list input[type='checkbox'] {
+        margin-right: 8px;
+        accent-color: var(--accent);
+      }
+
+      .md-footnotes {
+        margin-top: 12px;
+        font-size: 12px;
+        color: var(--text-secondary);
+      }
+
+      .md-footnotes ol {
+        padding-left: 20px;
+      }
+      
+      .ai-file-header {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        font-size: 12px;
+        color: var(--text-secondary);
+        margin-bottom: 8px;
+      }
+      
+      .ai-file-name {
+        font-weight: 600;
+        color: var(--text);
+        font-family: monospace;
+      }
+      
+      /* Chat Input */
+      .chat-input-container {
+        padding: 16px;
+        border-top: 1px solid var(--border);
+      }
+      
+      .input-wrapper {
+        display: flex;
+        gap: 12px;
+        align-items: flex-end;
+        background: var(--bg);
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        padding: 12px;
+      }
+      
+      .chat-input {
+        flex: 1;
+        background: transparent;
+        border: none;
+        color: var(--text);
+        font-size: 14px;
+        resize: none;
+        outline: none;
+        min-height: 20px;
+        max-height: 150px;
+        font-family: inherit;
+        line-height: 1.5;
+      }
+      
+      .chat-input::placeholder {
+        color: var(--text-secondary);
+      }
+      
+      .send-btn {
+        background: var(--success);
+        color: white;
+        border: none;
+        width: 32px;
+        height: 32px;
+        border-radius: 8px;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        transition: all 0.2s;
+      }
+      
+      .send-btn:hover:not(:disabled) {
+        background: var(--success-hover);
+      }
+      
+      .send-btn:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+      }
+      
+      /* Status Bar */
+      .status-bar {
+        height: 24px;
+        background: var(--accent);
+        color: white;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 0 16px;
+        font-size: 12px;
+      }
+      
+      .status-bar.error {
+        background: var(--danger);
+      }
+      .status-bar.loading {
+        background: var(--warning);
+        color: var(--bg);
+      }
+      
+      .status-left,
+      .status-right {
+        display: flex;
+        gap: 16px;
+        align-items: center;
+      }
+      
+      .status-item {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+      }
+      
+      /* Context Menu */
+      .context-menu {
+        position: absolute;
+        background: var(--panel);
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        padding: 8px 0;
+        min-width: 160px;
+        box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+        display: none;
+        z-index: 1000;
+      }
+      
+      .context-menu.show {
+        display: block;
+      }
+      
+      .context-item {
+        padding: 8px 16px;
+        cursor: pointer;
+        font-size: 13px;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+      
+      .context-item:hover {
+        background: var(--bg);
+      }
+      
+      .context-separator {
+        height: 1px;
+        background: var(--border);
+        margin: 8px 0;
+      }
+      
+      /* Scrollbar */
+      ::-webkit-scrollbar {
+        width: 10px;
+        height: 10px;
+      }
+      
+      ::-webkit-scrollbar-track {
+        background: transparent;
+      }
+      
+      ::-webkit-scrollbar-thumb {
+        background: var(--border);
+        border-radius: 5px;
+        border: 2px solid transparent;
+        background-clip: content-box;
+      }
+      
+      ::-webkit-scrollbar-thumb:hover {
+        background: #484f58;
+      }
+      
+      /* Empty State */
+      .empty-state {
+        text-align: center;
+        padding: 40px;
+        color: var(--text-secondary);
+      }
+      
+      .empty-state-icon {
+        font-size: 48px;
+        margin-bottom: 16px;
+        opacity: 0.5;
+      }
+      
+      /* Animations */
+      @keyframes pulse {
+        0%,
+        100% {
+          opacity: 1;
+        }
+        50% {
+          opacity: 0.5;
+        }
+      }
+      
+      .loading {
+        animation: pulse 1.5s infinite;
+      }
+      /* Terminal Styles */
+      .terminal-container {
+        position: absolute;
+        bottom: 0;
+        left: 0;
+        right: 0;
+        height: 300px;
+        background: var(--bg);
+        border-top: 1px solid var(--border);
+        z-index: 100;
+      }
+      
+      .terminal-pane {
+        height: 100%;
+        display: flex;
+        flex-direction: column;
+      }
+      
+      .terminal-header {
+        padding: 8px 16px;
+        background: var(--sidebar);
+        border-bottom: 1px solid var(--border);
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        font-size: 12px;
+        font-weight: 600;
+      }
+      
+      .terminal-content {
+        flex: 1;
+        padding: 16px;
+        overflow-y: auto;
+        font-family: monospace;
+        font-size: 13px;
+      }
+      
+      .terminal-output {
+        margin-bottom: 8px;
+      }
+      
+      .terminal-output .command {
+        color: var(--accent);
+        margin-bottom: 4px;
+      }
+      
+      .terminal-output .output {
+        color: var(--text);
+        margin-bottom: 4px;
+        white-space: pre-wrap;
+      }
+      
+      .terminal-input {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+      
+      .terminal-input .prompt {
+        color: var(--success);
+      }
+      
+      .terminal-input input {
+        flex: 1;
+        background: transparent;
+        border: none;
+        color: var(--text);
+        font-family: monospace;
+        font-size: 13px;
+        outline: none;
+      }
+      
+      /* Issues Panel */
+      .issues-container {
+        position: absolute;
+        bottom: 0;
+        left: 0;
+        right: 0;
+        height: 200px;
+        background: var(--bg);
+        border-top: 1px solid var(--border);
+        z-index: 90;
+      }
+      
+      .issues-panel {
+        height: 100%;
+        display: flex;
+        flex-direction: column;
+      }
+      
+      .issues-header {
+        padding: 8px 16px;
+        background: var(--sidebar);
+        border-bottom: 1px solid var(--border);
+        font-size: 12px;
+        font-weight: 600;
+      }
+      
+      .issue {
+        padding: 8px 16px;
+        border-bottom: 1px solid var(--border);
+        display: flex;
+        gap: 16px;
+        align-items: center;
+        font-size: 12px;
+      }
+      
+      .issue-loc {
+        min-width: 100px;
+        color: var(--text-secondary);
+        font-family: monospace;
+      }
+      
+      .issue.error {
+        border-left: 3px solid var(--danger);
+      }
+      
+      .issue.warning {
+        border-left: 3px solid var(--warning);
+      }
+      
+      .issue.info {
+        border-left: 3px solid var(--accent);
+      }
+      
+      .no-issues {
+        padding: 16px;
+        text-align: center;
+        color: var(--success);
+      }
+
+      /* Modal Styles */
+.modal-overlay {
+    backdrop-filter: blur(4px);
+    animation: fadeIn 0.3s ease;
+}
+
+@keyframes fadeIn {
+    from {
+        opacity: 0;
+        backdrop-filter: blur(0px);
+    }
+    to {
+        opacity: 1;
+        backdrop-filter: blur(4px);
+    }
+}
+
+.modal-content {
+    animation: slideUp 0.3s ease;
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+}
+
+@keyframes slideUp {
+    from {
+        transform: translateY(40px);
+        opacity: 0;
+    }
+    to {
+        transform: translateY(0);
+        opacity: 1;
+    }
+}
+
+.output-container::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+}
+
+.output-container::-webkit-scrollbar-track {
+    background: rgba(255, 255, 255, 0.05);
+    border-radius: 4px;
+}
+
+.output-container::-webkit-scrollbar-thumb {
+    background: var(--border);
+    border-radius: 4px;
+}
+
+.output-container pre {
+    margin: 0;
+    white-space: pre-wrap;
+    word-wrap: break-word;
+}
+/* Image Generation Styles */
+.image-prompt-container {
+    padding: 8px 16px;
+    border-bottom: 1px solid var(--border);
+    background: var(--sidebar);
+}
+
+.image-params {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+    margin-top: 12px;
+}
+
+.param-group {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.param-label {
+    font-size: 11px;
+    color: var(--text-secondary);
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.param-select, .param-input {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    color: var(--text);
+    padding: 6px 8px;
+    border-radius: 6px;
+    font-size: 12px;
+    outline: none;
+}
+
+.param-select:focus, .param-input:focus {
+    border-color: var(--accent);
+}
+
+.image-result-container {
+    margin: 16px;
+    text-align: center;
+}
+
+.generated-image {
+    max-width: 100%;
+    max-height: 400px;
+    border-radius: 8px;
+    border: 2px solid var(--border);
+    margin-bottom: 12px;
+}
+
+.image-actions {
+    display: flex;
+    gap: 8px;
+    justify-content: center;
+    margin-top: 12px;
+}
+
+.image-action-btn {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    color: var(--text);
+    padding: 8px 16px;
+    border-radius: 8px;
+    cursor: pointer;
+    font-size: 12px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    transition: all 0.2s;
+}
+
+.image-action-btn:hover {
+    background: var(--bg);
+    border-color: var(--accent);
+    transform: translateY(-1px);
+}
+
+.loading-image {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 16px;
+    padding: 40px;
+    color: var(--text-secondary);
+}
+
+.loading-spinner {
+    width: 40px;
+    height: 40px;
+    border: 3px solid var(--border);
+    border-top: 3px solid var(--accent);
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+}
+
+.image-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+    gap: 16px;
+    margin-top: 16px;
+}
+
+.image-grid-item {
+    position: relative;
+    border-radius: 8px;
+    overflow: hidden;
+    border: 1px solid var(--border);
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.image-grid-item:hover {
+    transform: translateY(-4px);
+    border-color: var(--accent);
+    box-shadow: 0 8px 24px rgba(0,0,0,0.3);
+}
+
+.image-grid-item img {
+    width: 100%;
+    height: 200px;
+    object-fit: cover;
+}
+
+.image-grid-overlay {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    background: linear-gradient(transparent, rgba(0,0,0,0.8));
+    padding: 8px;
+    color: white;
+    font-size: 11px;
+    opacity: 0;
+    transition: opacity 0.2s;
+}
+
+.image-grid-item:hover .image-grid-overlay {
+    opacity: 1;
+}
+    </style>
+
+    <script>
+      // Define global functions that will be used in inline event handlers
+      // These will be redefined later, but need to exist during initial page load
+      
+      // File operations
+      function newFile() {
+        if (typeof window.newFileHandler === 'function') {
+          window.newFileHandler()
+        } else {
+          alert('Initializing... Please wait or refresh the page.')
+        }
+      }
+      
+      function newFolder() {
+        if (typeof window.newFolderHandler === 'function') {
+          window.newFolderHandler()
+        } else {
+          alert('Initializing... Please wait or refresh the page.')
+        }
+      }
+      
+      function refreshExplorer() {
+        if (typeof window.refreshExplorerHandler === 'function') {
+          window.refreshExplorerHandler()
+        } else {
+          location.reload()
+        }
+      }
+      
+      // Chat functions
+      function sendMessage() {
+        if (typeof window.sendMessageHandler === 'function') {
+          window.sendMessageHandler()
+        } else {
+          alert('Initializing... Please wait or refresh the page.')
+        }
+      }
+      
+      function handleKeydown(e) {
+        if (typeof window.handleKeydownHandler === 'function') {
+          window.handleKeydownHandler(e)
+        }
+        // Prevent default Enter behavior for now
+        if (e.key === 'Enter' && !e.shiftKey) {
+          e.preventDefault()
+        }
+      }
+      
+      function autoResize(textarea) {
+        if (typeof window.autoResizeHandler === 'function') {
+          window.autoResizeHandler(textarea)
+        } else {
+          textarea.style.height = 'auto'
+          textarea.style.height = Math.min(textarea.scrollHeight, 150) + 'px'
+        }
+      }
+      
+      // View switching
+      function switchView(view) {
+        if (typeof window.switchViewHandler === 'function') {
+          window.switchViewHandler(view, event)
+        } else {
+          alert('Initializing... Please wait or refresh the page.')
+        }
+      }
+      
+      function focusChat() {
+        document.getElementById('chatInput')?.focus()
+      }
+      
+      function loadExample() {
+        if (typeof window.loadExampleHandler === 'function') {
+          window.loadExampleHandler()
+        } else {
+          alert('Initializing... Please wait or refresh the page.')
+        }
+      }
+      
+      function initProjectTemplate() {
+        const projectName = prompt('Enter project name:', 'my-enterprise-app')
+        if (!projectName) return
+        
+        const promptText = `Initialize a professional enterprise-grade project structure for "${projectName}". 
+Include:
+1. A main entry point
+2. A clear directory structure (src, tests, docs)
+3. A comprehensive README.md
+4. Configuration files (e.g., .gitignore, requirements.txt)
+Use CREATE_FILE commands for all files.`
+        
+        document.getElementById('chatInput').value = promptText
+        sendMessage()
+      }
+      
+      function showShortcuts() {
+        if (typeof window.showShortcutsHandler === 'function') {
+          window.showShortcutsHandler()
+        } else {
+          alert('Keyboard Shortcuts:\n- Enter: Send message\n- Shift+Enter: New line in chat\n- Ctrl+N: New file\n- Ctrl+W: Close tab')
+        }
+      }
+      
+      function clearChat() {
+        if (typeof window.clearChatHandler === 'function') {
+          window.clearChatHandler()
+        } else {
+          if (confirm('Clear chat history?')) {
+            document.getElementById('chatMessages').innerHTML = '<div class="empty-state"><div class="empty-state-icon">🤖</div><p>Start a conversation with Galaxy</p></div>'
+          }
+        }
+      }
+      
+      // Tab management
+      function closeTab(fileId, event) {
+        if (event) event.stopPropagation()
+        if (typeof window.closeTabHandler === 'function') {
+          window.closeTabHandler(fileId, event)
+        }
+      }
+      
+      // Context menu
+      function contextAction(action) {
+        if (typeof window.contextActionHandler === 'function') {
+          window.contextActionHandler(action)
+        }
+      }
+      
+      // Code actions
+      function copyToChat(btn) {
+        if (typeof window.copyToChatHandler === 'function') {
+          window.copyToChatHandler(btn)
+        } else {
+          const code = btn.closest('.code-block').querySelector('pre').textContent
+          navigator.clipboard.writeText(code).then(() => {
+            btn.textContent = '✓ Copied'
+            setTimeout(() => (btn.textContent = '📋 Copy'), 2000)
+          })
+        }
+      }
+      
+      function insertIntoEditor(btn) {
+        if (typeof window.insertIntoEditorHandler === 'function') {
+          window.insertIntoEditorHandler(btn)
+        }
+      }
+    </script>
+  </head>
+  <body>
+    <div class="workspace">
+      <!-- Title Bar -->
+      <div class="title-bar">
+        <div class="logo">🌙 Galaxy Workspace</div>
+        <div class="menu">
+          <span onclick="newFileHandler()">File</span>
+          <span onclick="formatCurrentFile()">Format</span>
+          <span>View</span>
+          <span onclick="lintCurrentFile()">Analyze</span>
+          <span onclick="openTerminal()">Terminal</span>
+          <span onclick="runFile(state.files[state.activeTab]?.name || '')">Run</span>
+          <span onclick="showShortcutsHandler()">Help</span>
+        </div>
+      </div>
+
+      <div class="main-layout">
+        <!-- Activity Bar -->
+        <div class="activity-bar">
+          <div class="activity-item active" onclick="switchView('files')" title="Explorer">📁</div>
+          <div class="activity-item" onclick="switchView('search')" title="Search">🔍</div>
+          <div class="activity-item" onclick="switchView('git')" title="Source Control">🌿</div>
+          <div class="activity-item" onclick="switchView('debug')" title="Run and Debug">▶️</div>
+          <div class="activity-item" onclick="switchView('extensions')" title="Extensions">🧩</div>
+          <div style="flex:1"></div>
+          <div class="activity-item" onclick="switchView('settings')" title="Settings">⚙️</div>
+        </div>
+
+        <!-- Sidebar -->
+        <div class="sidebar" id="sidebar">
+          <div class="sidebar-header">
+            <span>EXPLORER</span>
+            <div class="sidebar-actions">
+              <button class="icon-btn-sm" onclick="newFile()" title="New File">📄</button>
+              <button class="icon-btn-sm" onclick="newFolder()" title="New Folder">📁</button>
+              <button class="icon-btn-sm" onclick="refreshExplorer()" title="Refresh">🔄</button>
+            </div>
+          </div>
+          <div class="file-tree" id="fileTree">
+            <!-- Files populated by JS -->
+          </div>
+        </div>
+
+        <!-- Editor Area -->
+        <div class="editor-area">
+          <!-- Tab Bar -->
+          <div class="tab-bar" id="tabBar">
+            <!-- Tabs populated by JS -->
+          </div>
+
+          <!-- Editor Container -->
+          <div class="editor-container" id="editorContainer">
+            <!-- Welcome Page -->
+            <div class="welcome-page active" id="welcomePage">
+              <div class="welcome-logo">🚀</div>
+              <h1 class="welcome-title">Welcome to Galaxy Workspace</h1>
+              <p class="welcome-subtitle">AI-powered coding with integrated file management</p>
+
+              <div class="welcome-actions">
+                <div class="welcome-card" onclick="newFile()">
+                  <h3>📄 New File</h3>
+                  <p>Create a new file and start coding with AI assistance</p>
+                </div>
+                <div class="welcome-card" onclick="focusChat()">
+                  <h3>💬 Start Chat</h3>
+                  <p>Ask Galaxy to generate code, explain concepts, or review your work</p>
+                </div>
+                <div class="welcome-card" onclick="loadExample()">
+                  <h3>📚 Load Example</h3>
+                  <p>See how AI can create and manage multiple files</p>
+                </div>
+                <div class="welcome-card" onclick="initProjectTemplate()">
+                  <h3>🏗️ Project Template</h3>
+                  <p>Initialize a professional project structure with best practices</p>
+                </div>
+                <div class="welcome-card" onclick="showShortcuts()">
+                  <h3>⌨️ Shortcuts</h3>
+                  <p>Learn keyboard shortcuts and AI commands</p>
+                </div>
+              </div>
+            </div>
+
+            <!-- Monaco Editor -->
+            <div class="editor-pane" id="monacoPane">
+              <div id="monaco-editor"></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Chat Panel -->
+        <div class="chat-panel">
+          <div class="chat-header">
+            <h3>💬 Galaxy Assistant</h3>
+            <div style="display: flex; gap: 8px;">
+              <button class="icon-btn-sm" onclick="newThread()" title="New Thread">➕</button>
+              <button class="icon-btn-sm" onclick="clearChat()" title="Clear Chat">🗑️</button>
+            </div>
+          </div>
+
+          <!-- Thread List (collapsible) -->
+          <div class="chat-toolbar" style="padding: 8px 16px; border-bottom: 1px solid var(--border);">
+            <button class="icon-btn-sm" onclick="toggleThreadList()" title="Toggle Thread List">📋</button>
+            <select id="modelSelect" class="model-select" style="flex: 1; max-width: 200px;">
+    <!-- Galaxy Models -->
+    <optgroup label="Galaxy Models">
+        <option value="moonshotai/kimi-k2.5">Kimi K2.5</option>
+        <option value="moonshotai/kimi-k2">Kimi K2</option>
+        <option value="moonshotai/kimi-k2-thinking">Kimi K2 Thinking</option>
+    </optgroup>
+    
+    <!-- OpenAI Models -->
+    <optgroup label="OpenAI">
+        <option value="gpt-5-mini">GPT-5 Mini</option>
+        <option value="gpt-5-nano">GPT-5 Nano</option>
+        <option value="gpt-4o">GPT-4o</option>
+        <option value="gpt-4o-mini">GPT-4o Mini</option>
+    </optgroup>
+    
+    <!-- Google Models -->
+    <optgroup label="Google Gemini">
+        <option value="gemini-2.5-flash-lite">Gemini 2.5 Flash Lite</option>
+    </optgroup>
+    
+    <!-- Meta Models -->
+    <optgroup label="Meta">
+        <option value="meta-llama/llama-3.3-70b-instruct">Llama 3.3 70B</option>
+        <option value="meta-llama/llama-3.1-8b-instruct">Llama 3.1 8B</option>
+        <option value="meta-llama/llama-3.2-1b-instruct">Llama 3.2 1B</option>
+    </optgroup>
+    
+    <!-- Image Generation Models -->
+    <optgroup label="Image Generation">
+        <option value="dall-e-3">DALL-E 3 (Image)</option>
+        <option value="flux-dev">Flux Dev (Image)</option>
+        <option value="playground-v2.5">Playground v2.5 (Image)</option>
+    </optgroup>
+</select>
+            <span id="currentThreadTitle" style="flex: 1; font-size: 12px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; cursor: pointer;" onclick="updateThreadTitle()" title="Click to rename">New Conversation</span>
+          </div>
+          
+          <!-- Thread Sidebar (hidden by default) -->
+          <div id="threadSidebar" style="display: none; padding: 8px 16px; border-bottom: 1px solid var(--border); max-height: 150px; overflow-y: auto;">
+            <div id="threadList" style="display: flex; flex-direction: column; gap: 4px;"></div>
+          </div>
+
+          <div class="chat-messages" id="chatMessages">
+            <div class="empty-state">
+              <div class="empty-state-icon">🤖</div>
+              <p>Start a conversation with Galaxy</p>
+              <p style="font-size: 12px; margin-top: 8px; opacity: 0.7;">Try: "Create a main.py that calculates fibonacci"</p>
+            </div>
+          </div>
+
+          <div class="chat-input-container">
+            <div class="input-wrapper">
+              <textarea id="chatInput" class="chat-input" placeholder="Ask me to code... (Shift+Enter for new line)" rows="1" onkeydown="handleKeydown(event)" oninput="autoResize(this)"></textarea>
+              <button class="send-btn" id="sendBtn" onclick="sendMessage()">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <line x1="22" y1="2" x2="11" y2="13"></line>
+                  <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
+                </svg>
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Status Bar -->
+      <div class="status-bar" id="statusBar">
+        <div class="status-left">
+          <span class="status-item" id="branchName">🌿 main</span>
+          <span class="status-item" id="fileStatus">📄 Ready</span>
+        </div>
+        <div class="status-right">
+          <span class="status-item" id="cursorPos">Ln 1, Col 1</span>
+          <span class="status-item" id="encoding">UTF-8</span>
+          <span class="status-item" id="language">Python</span>
+          <span class="status-item" id="modelStatus">Galaxy K2.5</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Context Menu -->
+    <div class="context-menu" id="contextMenu">
+      <div class="context-item" onclick="contextAction('open')">📂 Open</div>
+      <div class="context-item" onclick="contextAction('rename')">✏️ Rename</div>
+      <div class="context-separator"></div>
+      <div class="context-item" onclick="contextAction('delete')" style="color: var(--danger)">🗑️ Delete</div>
+    </div>
+
+    <script>
+      // State Management
+      const state = {
+        files: {},
+        openTabs: [],
+        activeTab: null,
+        currentChat: [],
+        currentThread: null,
+        isProcessing: false,
+        editor: null,
+        serverUrl: window.location.origin,
+        systemContext: `{{ system_context|safe }}` // Server-side injected context
+      }
+      
+      // ========== CONVERSATION THREAD MANAGEMENT ==========
+      class ConversationManager {
+        constructor() {
+          this.storageKey = 'Galaxy_threads'
+          this.threadListKey = 'Galaxy_thread_list'
+          this.currentThreadKey = 'Galaxy_current_thread'
+        }
+        
+        loadThreads() {
+          try {
+            const saved = localStorage.getItem(this.threadListKey)
+            if (saved) {
+              const threads = JSON.parse(saved)
+              // Load full thread data
+              const fullThreads = {}
+              Object.keys(threads).forEach(id => {
+                const threadData = localStorage.getItem(this.storageKey + '_' + id)
+                if (threadData) {
+                  fullThreads[id] = JSON.parse(threadData)
+                }
+              })
+              return fullThreads
+            }
+          } catch (e) {
+            console.error('Failed to load threads:', e)
+          }
+          return {}
+        }
+        
+        saveThreads(threads) {
+          try {
+            // Save thread list metadata
+            const threadList = {}
+            Object.keys(threads).forEach(id => {
+              threadList[id] = {
+                id: id,
+                title: threads[id].title,
+                created: threads[id].created,
+                updated: threads[id].updated,
+                message_count: threads[id].messages?.length || 0
+              }
+              // Save full thread data
+              localStorage.setItem(this.storageKey + '_' + id, JSON.stringify(threads[id]))
+            })
+            localStorage.setItem(this.threadListKey, JSON.stringify(threadList))
+            return true
+          } catch (e) {
+            console.error('Failed to save threads:', e)
+            return false
+          }
+        }
+        
+        createThread(title = 'New Conversation') {
+          const thread = {
+            id: 'thread_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9),
+            title: title,
+            created: Date.now(),
+            updated: Date.now(),
+            messages: []
+          }
+          
+          const threads = this.loadThreads()
+          threads[thread.id] = thread
+          this.saveThreads(threads)
+          
+          return thread
+        }
+        
+        getThread(threadId) {
+          const threads = this.loadThreads()
+          return threads[threadId] || null
+        }
+        
+        addMessage(threadId, role, content) {
+          const threads = this.loadThreads()
+          if (threads[threadId]) {
+            threads[threadId].messages.push({
+              role: role,
+              content: content,
+              timestamp: Date.now()
+            })
+            threads[threadId].updated = Date.now()
+            this.saveThreads(threads)
+            return threads[threadId].messages[threads[threadId].messages.length - 1]
+          }
+          return null
+        }
+        
+        getMessages(threadId) {
+          const thread = this.getThread(threadId)
+          return thread ? thread.messages : []
+        }
+        
+        deleteThread(threadId) {
+          const threads = this.loadThreads()
+          if (threads[threadId]) {
+            delete threads[threadId]
+            localStorage.removeItem(this.storageKey + '_' + threadId)
+            this.saveThreads(threads)
+            return true
+          }
+          return false
+        }
+        
+        updateTitle(threadId, title) {
+          const threads = this.loadThreads()
+          if (threads[threadId]) {
+            threads[threadId].title = title
+            threads[threadId].updated = Date.now()
+            this.saveThreads(threads)
+            return true
+          }
+          return false
+        }
+        
+        getAllThreads() {
+          const threads = this.loadThreads()
+          return Object.values(threads).sort((a, b) => b.updated - a.updated)
+        }
+        
+        setCurrentThread(threadId) {
+          localStorage.setItem(this.currentThreadKey, threadId)
+        }
+        
+        getCurrentThread() {
+          return localStorage.getItem(this.currentThreadKey)
+        }
+      }
+      
+      const conversationManager = new ConversationManager()
+      
+      // Initialize or restore current thread
+      function initializeCurrentThread() {
+        let currentThreadId = conversationManager.getCurrentThread()
+        
+        if (currentThreadId && conversationManager.getThread(currentThreadId)) {
+          state.currentThread = currentThreadId
+          loadThreadMessages(currentThreadId)
+        } else {
+          // Create or get default thread
+          const threads = conversationManager.getAllThreads()
+          if (threads.length > 0) {
+            state.currentThread = threads[0].id
+            conversationManager.setCurrentThread(state.currentThread)
+            loadThreadMessages(state.currentThread)
+          } else {
+            const thread = conversationManager.createThread('New Conversation')
+            state.currentThread = thread.id
+            conversationManager.setCurrentThread(state.currentThread)
+          }
+        }
+        updateThreadTitleUI()
+      }
+      
+      function loadThreadMessages(threadId) {
+        const messages = conversationManager.getMessages(threadId)
+        const container = document.getElementById('chatMessages')
+        
+        if (container && messages.length > 0) {
+          // Clear current messages
+          container.innerHTML = ''
+          
+          // Restore messages
+          messages.forEach(msg => {
+            const msgDiv = createMessageElement(msg.role, msg.content)
+            container.appendChild(msgDiv)
+          })
+          
+          container.scrollTop = container.scrollHeight
+        } else if (container && messages.length === 0) {
+          container.innerHTML = '<div class="empty-state"><div class="empty-state-icon">🤖</div><p>Start a conversation with Galaxy</p><p style="font-size: 12px; margin-top: 8px; opacity: 0.7;">Try: "Create a main.py that calculates fibonacci"</p></div>'
+        }
+      }
+      
+      function saveCurrentThreadMessages() {
+        if (!state.currentThread) return
+        
+        // Get all messages from DOM
+        const container = document.getElementById('chatMessages')
+        if (!container) return
+        
+        const messages = []
+        const msgElements = container.querySelectorAll('.message')
+        
+        msgElements.forEach(msgEl => {
+          const role = msgEl.classList.contains('assistant') ? 'assistant' : 'user'
+          const contentEl = msgEl.querySelector('.message-content')
+          if (contentEl) {
+            // Get raw text content
+            const content = contentEl.textContent || contentEl.innerText
+            messages.push({ role, content, timestamp: Date.now() })
+          }
+        })
+        
+        // Update thread messages
+        const threads = conversationManager.loadThreads()
+        if (threads[state.currentThread]) {
+          threads[state.currentThread].messages = messages
+          threads[state.currentThread].updated = Date.now()
+          conversationManager.saveThreads(threads)
+        }
+      }
+      
+      function updateThreadTitleUI() {
+        const titleEl = document.getElementById('currentThreadTitle')
+        if (titleEl && state.currentThread) {
+          const thread = conversationManager.getThread(state.currentThread)
+          if (thread) {
+            titleEl.textContent = thread.title
+          }
+        }
+      }
+      
+      function newThread() {
+        // Save current thread messages first
+        saveCurrentThreadMessages()
+        
+        const thread = conversationManager.createThread('New Conversation')
+        state.currentThread = thread.id
+        conversationManager.setCurrentThread(state.currentThread)
+        
+        // Clear chat UI
+        const container = document.getElementById('chatMessages')
+        if (container) {
+          container.innerHTML = '<div class="empty-state"><div class="empty-state-icon">🤖</div><p>Start a conversation with Galaxy</p><p style="font-size: 12px; margin-top: 8px; opacity: 0.7;">Try: "Create a main.py that calculates fibonacci"</p></div>'
+        }
+        
+        updateThreadTitleUI()
+        renderThreadList()
+      }
+      
+      function switchThread(threadId) {
+        // Save current thread messages
+        saveCurrentThreadMessages()
+        
+        state.currentThread = threadId
+        conversationManager.setCurrentThread(threadId)
+        
+        // Load new thread messages
+        loadThreadMessages(threadId)
+        updateThreadTitleUI()
+        
+        // Close thread list
+        document.getElementById('threadSidebar').style.display = 'none'
+      }
+      
+      function toggleThreadList() {
+        const sidebar = document.getElementById('threadSidebar')
+        if (sidebar) {
+          sidebar.style.display = sidebar.style.display === 'none' ? 'block' : 'none'
+          if (sidebar.style.display === 'block') {
+            renderThreadList()
+          }
+        }
+      }
+      
+      function renderThreadList() {
+        const listEl = document.getElementById('threadList')
+        if (!listEl) return
+        
+        const threads = conversationManager.getAllThreads()
+        
+        listEl.innerHTML = ''
+        
+        if (threads.length === 0) {
+          listEl.innerHTML = '<div style="text-align: center; padding: 8px; color: var(--text-secondary); font-size: 12px;">No threads yet</div>'
+          return
+        }
+        
+        threads.forEach(thread => {
+          const item = document.createElement('div')
+          item.className = 'file-item'
+          if (thread.id === state.currentThread) {
+            item.classList.add('active')
+          }
+          
+          item.style.padding = '6px 8px'
+          item.style.fontSize = '12px'
+          
+          const date = new Date(thread.updated).toLocaleDateString()
+          item.innerHTML = `<span style="flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${escapeHtml(thread.title)}</span>
+                            <span style="color: var(--text-secondary); font-size: 10px;">${date}</span>
+                            <button class="icon-btn-sm" onclick="deleteThreadHandler('${thread.id}', event)" title="Delete">🗑️</button>`
+          
+          item.onclick = (e) => {
+            if (!e.target.classList.contains('icon-btn-sm')) {
+              switchThread(thread.id)
+            }
+          }
+          
+          listEl.appendChild(item)
+        })
+      }
+      
+      function deleteThreadHandler(threadId, event) {
+        event.stopPropagation()
+        if (confirm('Delete this conversation thread?')) {
+          conversationManager.deleteThread(threadId)
+          
+          if (state.currentThread === threadId) {
+            // Switch to another thread or create new one
+            const threads = conversationManager.getAllThreads()
+            if (threads.length > 0) {
+              switchThread(threads[0].id)
+            } else {
+              newThread()
+            }
+          }
+          
+          renderThreadList()
+        }
+      }
+      
+      function updateThreadTitle() {
+        if (!state.currentThread) return
+        
+        const thread = conversationManager.getThread(state.currentThread)
+        if (thread) {
+          const newTitle = prompt('Rename conversation:', thread.title)
+          if (newTitle && newTitle.trim()) {
+            conversationManager.updateTitle(state.currentThread, newTitle.trim())
+            updateThreadTitleUI()
+            renderThreadList()
+          }
+        }
+      }
+      
+      // File System
+      // File System
+      class FileSystem {
+        constructor() {
+          // First check if we have initial files from server template
+          try {
+            const initialFiles = {{ initial_files|safe }};
+            if (initialFiles && initialFiles.length > 0) {
+              // Convert array to object format
+              initialFiles.forEach((file) => {
+                state.files[file.id] = file
+              })
+              this.saveToStorage()
+            }
+          } catch (e) {
+            console.log('No initial files from server:', e)
+          }
+      
+          // Then load from local storage (may have newer changes)
+          this.loadFromStorage()
+      
+          if (Object.keys(state.files).length === 0) {
+            // Last resort: create default files
+            this.createDefaultFiles()
+          }
+      
+          renderFileTree()
+        }
+      
+        async loadFromServer() {
+          try {
+            const response = await fetch(state.serverUrl + '/api/files')
+            if (response.ok) {
+              const serverFiles = await response.json()
+              if (Object.keys(serverFiles).length > 0) {
+                state.files = serverFiles
+                this.saveToStorage()
+              }
+            }
+          } catch (error) {
+            console.log('Using local storage:', error)
+          }
+        }
+      
+        async saveToServer() {
+          try {
+            const response = await fetch(state.serverUrl + '/api/files', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(state.files)
+            })
+            return response.ok
+          } catch (error) {
+            console.error('Failed to save to server:', error)
+            return false
+          }
+        }
+      
+        createDefaultFiles() {
+          this.createFile('README.md', '# Welcome to Galaxy Workspace\n\nThis is an AI-powered coding environment.\n\n## Features:\n- 🤖 AI-assisted coding with Galaxy K2\n- 📁 File management\n- 📝 Multi-tab editor\n- 💬 Integrated chat\n- 🔧 Server-side processing\n- 🛠️ Advanced tools\n\nTry asking Galaxy to create files for you!')
+          this.saveToStorage()
+        }
+      
+        createFile(name, content = '') {
+          const existing = Object.values(state.files).find((f) => f.name === name)
+          if (existing) {
+            addSystemMessage('File already exists: ' + name)
+            return null
+          }
+          const id = 'file_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9)
+          state.files[id] = {
+            id,
+            name,
+            content,
+            language: this.detectLanguage(name),
+            saved: true,
+            lastModified: Date.now()
+          }
+          this.saveToStorage() // This will now sync to server
+          renderFileTree()
+          return id
+        }
+      
+        updateFile(id, content) {
+          if (state.files[id]) {
+            state.files[id].content = content
+            state.files[id].saved = false
+            state.files[id].lastModified = Date.now()
+            this.saveToStorage() // This will now sync to server
+            updateTabStatus(id, false)
+          }
+        }
+      
+        renameFile(id, newName) {
+          if (state.files[id]) {
+            state.files[id].name = newName
+            state.files[id].language = this.detectLanguage(newName)
+            this.saveToStorage()
+            renderFileTree()
+            renderTabs()
+          }
+        }
+      
+        deleteFile(id) {
+          delete state.files[id]
+          closeTabHandler(id)
+          this.saveToStorage()
+          renderFileTree()
+        }
+      
+        detectLanguage(filename) {
+          const ext = filename.split('.').pop().toLowerCase()
+          const map = {
+            py: 'python',
+            js: 'javascript',
+            ts: 'typescript',
+            html: 'html',
+            css: 'css',
+            json: 'json',
+            java: 'java',
+            cpp: 'cpp',
+            c: 'c',
+            go: 'go',
+            rs: 'rust',
+            rb: 'ruby',
+            php: 'php',
+            md: 'markdown',
+            txt: 'plaintext'
+          }
+          return map[ext] || 'plaintext'
+        }
+      
+        saveToStorage() {
+          localStorage.setItem('Galaxy_workspace_files', JSON.stringify(state.files))
+          // Also save to server in background
+          this.saveToServer().then((success) => {
+            if (success) {
+              console.log('Files synced to server')
+            }
+          })
+        }
+      
+        loadFromStorage() {
+          try {
+            const saved = localStorage.getItem('Galaxy_workspace_files')
+            if (saved) {
+              state.files = JSON.parse(saved)
+            }
+          } catch (e) {
+            console.error('Failed to load files:', e)
+          }
+        }
+      }
+      
+      const fs = new FileSystem()
+      
+      // Initialize Monaco Editor
+      require.config({ paths: { vs: 'https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.44.0/min/vs' } })
+      require(['vs/editor/editor.main'], function () {
+        state.editor = monaco.editor.create(document.getElementById('monaco-editor'), {
+          value: '',
+          language: 'python',
+          theme: 'vs-dark',
+          automaticLayout: true,
+          minimap: { enabled: true },
+          fontSize: 14,
+          fontFamily: 'SFMono-Regular, Consolas, Liberation Mono, Menlo, monospace',
+          lineNumbers: 'on',
+          roundedSelection: false,
+          scrollBeyondLastLine: false,
+          padding: { top: 16 },
+          wordWrap: 'on'
+        })
+      
+        // Update cursor position in status bar
+        state.editor.onDidChangeCursorPosition((e) => {
+          document.getElementById('cursorPos').textContent = 'Ln ' + e.position.lineNumber + ', Col ' + e.position.column
+        })
+      
+        // Auto-save on change
+        let saveTimeout
+        state.editor.onDidChangeModelContent(() => {
+          if (state.activeTab) {
+            clearTimeout(saveTimeout)
+            saveTimeout = setTimeout(() => {
+              const content = state.editor.getValue()
+              fs.updateFile(state.activeTab, content)
+            }, 1000)
+          }
+        })
+      })
+      
+      // UI Rendering
+      function renderFileTree() {
+    const tree = document.getElementById('fileTree')
+    if (!tree) return
+  
+    tree.innerHTML = ''
+  
+    Object.values(state.files).forEach((file) => {
+        const item = document.createElement('div')
+        item.className = 'file-item'
+        if (file.id === state.activeTab) item.classList.add('active')
+    
+        const icon = getFileIcon(file.name)
+    
+        item.innerHTML = '<span class="icon">' + icon + '</span><span class="name">' + escapeHtml(file.name) + '</span>' + (file.saved == false ? '<span style=\"color: var(--accent)\">●</span>' : '')
+    
+        item.onclick = () => openFile(file.id)
+        item.oncontextmenu = (e) => showContextMenu(e, file.id)
+    
+        tree.appendChild(item)
+    })
+}
+      
+      function getFileIcon(filename) {
+        if (filename.endsWith('.py')) return '🐍'
+        if (filename.endsWith('.js')) return '📜'
+        if (filename.endsWith('.html')) return '🌐'
+        if (filename.endsWith('.css')) return '🎨'
+        if (filename.endsWith('.json')) return '📋'
+        if (filename.endsWith('.md')) return '📝'
+        return '📄'
+      }
+      
+      function renderTabs() {
+        const bar = document.getElementById('tabBar')
+        if (!bar) return
+      
+        bar.innerHTML = ''
+      
+        state.openTabs.forEach((tabId) => {
+          const file = state.files[tabId]
+          if (!file) return
+      
+          const tab = document.createElement('div')
+          tab.className = 'tab'
+          if (tabId === state.activeTab) tab.classList.add('active')
+          if (!file.saved) tab.classList.add('unsaved')
+      
+          tab.innerHTML = '<span>' + getFileIcon(file.name) + '</span><span>' + escapeHtml(file.name) + '</span><span class="tab-close" onclick="closeTabHandler(\'' + tabId + '\', event)">×</span>'
+      
+          tab.onclick = () => switchToTab(tabId)
+          bar.appendChild(tab)
+        })
+      }
+      
+      // Tab Management
+      function openFile(fileId) {
+        if (!state.files[fileId]) return
+      
+        if (!state.openTabs.includes(fileId)) {
+          state.openTabs.push(fileId)
+        }
+      
+        switchToTab(fileId)
+        renderFileTree()
+        renderTabs()
+      }
+      
+      function switchToTab(fileId) {
+        state.activeTab = fileId
+        const file = state.files[fileId]
+      
+        const welcomePage = document.getElementById('welcomePage')
+        const monacoPane = document.getElementById('monacoPane')
+      
+        if (welcomePage) welcomePage.classList.remove('active')
+        if (monacoPane) monacoPane.classList.add('active')
+      
+        if (state.editor && file) {
+          state.editor.setValue(file.content)
+          monaco.editor.setModelLanguage(state.editor.getModel(), file.language)
+        }
+      
+        const languageElem = document.getElementById('language')
+        if (languageElem) languageElem.textContent = file.language
+      
+        updateStatus('Editing ' + file.name)
+        renderTabs()
+        renderFileTree()
+      }
+      
+      // This is the actual handler for closeTab
+      function closeTabHandler(fileId, event) {
+        if (event) event.stopPropagation()
+      
+        const idx = state.openTabs.indexOf(fileId)
+        if (idx > -1) {
+          state.openTabs.splice(idx, 1)
+        }
+      
+        if (state.activeTab === fileId) {
+          if (state.openTabs.length > 0) {
+            switchToTab(state.openTabs[state.openTabs.length - 1])
+          } else {
+            state.activeTab = null
+            const welcomePage = document.getElementById('welcomePage')
+            const monacoPane = document.getElementById('monacoPane')
+            if (welcomePage) welcomePage.classList.add('active')
+            if (monacoPane) monacoPane.classList.remove('active')
+            updateStatus('Ready')
+          }
+        }
+      
+        renderTabs()
+      }
+      
+      function updateTabStatus(fileId, saved) {
+        renderTabs()
+      }
+      
+      // Chat System with AI File Operations
+      async function sendMessageHandler() {
+    const input = document.getElementById('chatInput')
+    if (!input) return
+    
+    const text = input.value.trim()
+    
+    if (!text || state.isProcessing) return
+    
+    // Check if we're in image mode
+    if (imageMode) {
+        generateImageFromPrompt()
+        return
+    }
+      
+        // Ensure we have a current thread
+        if (!state.currentThread) {
+          initializeCurrentThread()
+        }
+      
+        // Add user message
+        addMessage('user', text)
+        input.value = ''
+        input.style.height = 'auto'
+      
+        // Save user message to thread
+        conversationManager.addMessage(state.currentThread, 'user', text)
+        
+        state.isProcessing = true
+        updateStatus('Generating...', 'loading')
+      
+        const sendBtn = document.getElementById('sendBtn')
+        if (sendBtn) sendBtn.disabled = true
+      
+        try {
+          // Check for special commands
+          const commandResult = processSpecialCommands(text)
+          if (commandResult) {
+            addMessage('assistant', commandResult)
+            conversationManager.addMessage(state.currentThread, 'assistant', commandResult)
+            finishProcessing()
+            return
+          }
+      
+          // Build context with file information AND conversation history
+          const context = buildContext()
+          
+          // Add conversation history to context
+          const threadMessages = conversationManager.getMessages(state.currentThread)
+          let conversationHistory = ''
+          if (threadMessages.length > 0) {
+            // Get all messages except the last user message (which we just added)
+            const history = threadMessages.slice(0, -1)
+            history.forEach(msg => {
+              conversationHistory += `${msg.role === 'user' ? 'User' : 'Assistant'}: ${msg.content}\n\n`
+            })
+          }
+          
+          const fullPrompt = context + '\n\n=== CONVERSATION HISTORY ===\n' + conversationHistory + '\n=== END HISTORY ===\n\nCurrent conversation:\nUser: ' + text + '\n\nAssistant:'
+      
+          const modelSelect = document.getElementById('modelSelect')
+          const model = modelSelect ? modelSelect.value : 'moonshotai/kimi-k2.5'
+      
+          // Show typing indicator
+          showTypingIndicator()
+      
+          const response = await puter.ai.chat(fullPrompt, {
+            model: model,
+            stream: true
+          })
+      
+          hideTypingIndicator()
+      
+          // Create message container for streaming
+          const msgDiv = createMessageElement('assistant', '')
+          const contentDiv = msgDiv.querySelector('.message-content')
+          const container = document.getElementById('chatMessages')
+          if (container && container.querySelector('.empty-state')) {
+            container.innerHTML = ''
+          }
+          container.appendChild(msgDiv)
+      
+          let fullResponse = ''
+      
+          for await (const part of response) {
+            if (part?.text) {
+              fullResponse += part.text
+      
+              // Update the message content with processed response
+              const processed = processAIResponse(fullResponse)
+              contentDiv.innerHTML = processed
+      
+              // Auto-scroll
+              if (container) {
+                container.scrollTop = container.scrollHeight
+              }
+            }
+          }
+      
+          // Final processing for any file operations
+          executeFileOperations(fullResponse)
+      
+          // Ensure the final processed response is displayed
+          const finalProcessed = processAIResponse(fullResponse)
+          contentDiv.innerHTML = finalProcessed
+      
+          // Save assistant message to thread
+          conversationManager.addMessage(state.currentThread, 'assistant', fullResponse)
+      
+          updateStatus('Ready', 'ready')
+        } catch (error) {
+          hideTypingIndicator()
+          addMessage('assistant', '❌ Error: ' + error.message)
+          if (state.currentThread) {
+            conversationManager.addMessage(state.currentThread, 'assistant', '❌ Error: ' + error.message)
+          }
+          updateStatus('Error', 'error')
+        } finally {
+          finishProcessing()
+        }
+      }
+      
+      function finishProcessing() {
+        state.isProcessing = false
+        const sendBtn = document.getElementById('sendBtn')
+        if (sendBtn) sendBtn.disabled = false
+      
+        const modelStatus = document.getElementById('modelStatus')
+        const modelSelect = document.getElementById('modelSelect')
+        if (modelStatus && modelSelect) {
+          modelStatus.textContent = modelSelect.value.split('/').pop()
+        }
+      }
+
+      function buildFileTreeText(files) {
+        const tree = {}
+        files.forEach((file) => {
+          const parts = file.name.split('/').filter(Boolean)
+          let node = tree
+          parts.forEach((part) => {
+            if (!node[part]) node[part] = {}
+            node = node[part]
+          })
+        })
+
+        const lines = []
+        const walk = (node, prefix) => {
+          const keys = Object.keys(node).sort()
+          keys.forEach((key, index) => {
+            const child = node[key]
+            const isLast = index === keys.length - 1
+            const branch = isLast ? '└── ' : '├── '
+            lines.push(prefix + branch + key)
+            if (child && Object.keys(child).length > 0) {
+              const extension = isLast ? '    ' : '│   '
+              walk(child, prefix + extension)
+            }
+          })
+        }
+
+        if (Object.keys(tree).length === 0) {
+          return '📁 Workspace\n└── (empty)'
+        }
+
+        walk(tree, '')
+        return ['📁 Workspace', ...lines].join('\n')
+      }
+
+      function buildContext() {
+        let context = `{{ system_context|safe }}`
+
+        // Update with current files state (in case files changed client-side)
+        const files = Object.values(state.files)
+        if (files.length > 0) {
+          // Replace the "Current Files in Workspace (Tree):" section with current state
+          let filesSection = 'Current Files in Workspace (Tree):\n'
+          filesSection += buildFileTreeText(files) + '\n'
+
+          // Find and replace the files section in the context
+          const lines = context.split('\n')
+          let inFilesSection = false
+          let newContext = ''
+
+          for (let i = 0; i < lines.length; i++) {
+            if (lines[i].includes('Current Files in Workspace (Tree):')) {
+              inFilesSection = true
+              newContext += filesSection
+              // Skip existing file listings
+              while (i + 1 < lines.length && lines[i + 1].startsWith('- ')) {
+                i++
+              }
+            } else if (inFilesSection && lines[i].startsWith('- ') && i + 1 < lines.length && !lines[i + 1].startsWith('- ')) {
+              // We've reached the end of the files section
+              inFilesSection = false
+              newContext += lines[i] + '\n'
+            } else if (!inFilesSection) {
+              newContext += lines[i] + '\n'
+            }
+          }
+      
+          context = newContext
+        }
+      
+        return context
+      }
+      
+      function processSpecialCommands(text) {
+        const lower = text.toLowerCase()
+      
+        if (lower === '/files' || lower === '/ls') {
+          const files = buildFileTreeText(Object.values(state.files))
+          return '**Workspace Files (Tree):**\\n' + (files || '(empty)')
+        }
+      
+        if (lower === '/clear') {
+          const container = document.getElementById('chatMessages')
+          if (container) {
+            container.innerHTML = ''
+          }
+          return 'Chat cleared.'
+        }
+      
+        if (lower.startsWith('/open ')) {
+          const filename = text.slice(6).trim()
+          const file = Object.values(state.files).find((f) => f.name === filename)
+          if (file) {
+            openFile(file.id)
+            return 'Opened ' + filename
+          }
+          return 'File "' + filename + '" not found.'
+        }
+      
+        return null
+      }
+      
+      function processAIResponse(text) {
+        const withOps = injectFileOps(text)
+
+        if (window.marked) {
+          return marked.parse(withOps, {
+            gfm: true,
+            breaks: true,
+            renderer: getMarkdownRenderer()
+          })
+        }
+
+        return renderMarkdownFallback(text)
+      }
+
+      let markdownRendererCache = null
+
+      function getMarkdownRenderer() {
+        if (markdownRendererCache) return markdownRendererCache
+
+        const renderer = new marked.Renderer()
+
+        renderer.code = (code, language) => {
+          return renderCodeBlock(code, language)
+        }
+
+        renderer.codespan = (code) => '<code class="inline-code">' + escapeHtml(code) + '</code>'
+
+        markdownRendererCache = renderer
+        return renderer
+      }
+
+      function renderCodeBlock(code, language) {
+        const lang = language || 'text'
+        const escaped = escapeHtml(code)
+        return (
+          '<div class="code-block">' +
+          '<div class="code-header">' +
+          '<span class="code-lang">' +
+          escapeHtml(lang) +
+          '</span>' +
+          '<div class="code-actions">' +
+          '<button class="code-btn" onclick="copyToChat(this)">📋 Copy</button>' +
+          '<button class="code-btn" onclick="insertIntoEditor(this)">📥 Insert</button>' +
+          '</div>' +
+          '</div>' +
+          '<div class="code-content"><pre>' +
+          escaped +
+          '</pre></div>' +
+          '</div>'
+        )
+      }
+
+      function renderMarkdownFallback(text) {
+        const fileOps = []
+        let withFileOps = text
+          .replace(/CREATE_FILE:(\S+)/g, (match, name) => {
+            const token = `@@FILEOP${fileOps.length}@@`
+            fileOps.push('<span class="file-op create">[Creating: ' + escapeHtml(name) + ']</span>')
+            return token
+          })
+          .replace(/EDIT_FILE:(\S+)/g, (match, name) => {
+            const token = `@@FILEOP${fileOps.length}@@`
+            fileOps.push('<span class="file-op edit">[Editing: ' + escapeHtml(name) + ']</span>')
+            return token
+          })
+          .replace(/EDIT_REGION:(\S+)/g, (match, name) => {
+            const token = `@@FILEOP${fileOps.length}@@`
+            fileOps.push('<span class="file-op edit">[Region Edit: ' + escapeHtml(name) + ']</span>')
+            return token
+          })
+          .replace(/READ_FILE:(\S+)/g, (match, name) => {
+            const token = `@@FILEOP${fileOps.length}@@`
+            fileOps.push('<span class="file-op read">[Reading: ' + escapeHtml(name) + ']</span>')
+            return token
+          })
+          .replace(/DELETE_FILE:(\S+)/g, (match, name) => {
+            const token = `@@FILEOP${fileOps.length}@@`
+            fileOps.push('<span class="file-op delete">[Deleting: ' + escapeHtml(name) + ']</span>')
+            return token
+          })
+
+        const footnotes = {}
+        let withFootnotes = withFileOps
+          .split('\n')
+          .filter((line) => {
+            const match = line.match(/^\[\^([^\]]+)\]:\s*(.+)$/)
+            if (match) {
+              footnotes[match[1]] = match[2]
+              return false
+            }
+            return true
+          })
+          .join('\n')
+
+        const codeBlocks = []
+        let withPlaceholders = withFootnotes.replace(/```(\w+)?\n([\s\S]*?)```/g, (match, lang, code) => {
+          const html = renderCodeBlock(code, lang)
+          const index = codeBlocks.push(html) - 1
+          return `@@CODE${index}@@`
+        })
+
+        let out = escapeHtml(withPlaceholders)
+
+        out = convertTables(out)
+        out = convertLists(out)
+
+        out = out.replace(/^######\s+(.*)$/gm, '<h6>$1</h6>')
+        out = out.replace(/^#####\s+(.*)$/gm, '<h5>$1</h5>')
+        out = out.replace(/^####\s+(.*)$/gm, '<h4>$1</h4>')
+        out = out.replace(/^###\s+(.*)$/gm, '<h3>$1</h3>')
+        out = out.replace(/^##\s+(.*)$/gm, '<h2>$1</h2>')
+        out = out.replace(/^#\s+(.*)$/gm, '<h1>$1</h1>')
+        out = out.replace(/^---$/gm, '<hr>')
+        out = out.replace(/^&gt;\s?(.*)$/gm, '<blockquote>$1</blockquote>')
+
+        out = out.replace(/!\[([^\]]*)\]\((https?:\/\/[^)]+)\)/g, '<img src="$2" alt="$1">')
+        out = out.replace(/\[([^\]]+)\]\((https?:\/\/[^)]+)\)/g, '<a href="$2" target="_blank" rel="noreferrer">$1</a>')
+
+        out = out.replace(/~~(.+?)~~/g, '<del>$1</del>')
+        out = out.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+        out = out.replace(/__(.+?)__/g, '<strong>$1</strong>')
+        out = out.replace(/(^|[^*])\*(?!\s)([^*]+?)\*(?!\*)/g, '$1<em>$2</em>')
+        out = out.replace(/(^|[^_])_(?!\s)([^_]+?)_(?!_)/g, '$1<em>$2</em>')
+        out = out.replace(/`([^`]+)`/g, '<code class="inline-code">$1</code>')
+
+        out = out.replace(/\[\^([^\]]+)\]/g, (match, id) => {
+          const safeId = id.replace(/\s+/g, '-')
+          return '<sup id="fnref-' + safeId + '"><a href="#fn-' + safeId + '">' + escapeHtml(id) + '</a></sup>'
+        })
+
+        out = out.replace(/@@FILEOP(\d+)@@/g, (match, index) => {
+          const i = Number(index)
+          return fileOps[i] || match
+        })
+
+        out = out.replace(/\n/g, '<br>')
+
+        out = out.replace(/@@CODE(\d+)@@/g, (match, index) => {
+          const i = Number(index)
+          return codeBlocks[i] || match
+        })
+
+        const footnoteKeys = Object.keys(footnotes)
+        if (footnoteKeys.length > 0) {
+          let footnoteHtml = '<div class="md-footnotes"><hr><ol>'
+          footnoteKeys.forEach((key) => {
+            const safeId = key.replace(/\s+/g, '-')
+            footnoteHtml +=
+              '<li id="fn-' +
+              safeId +
+              '">' +
+              escapeHtml(footnotes[key]) +
+              ' <a href="#fnref-' +
+              safeId +
+              '">↩</a></li>'
+          })
+          footnoteHtml += '</ol></div>'
+          out += footnoteHtml
+        }
+
+        return out
+      }
+
+      function convertTables(text) {
+        const lines = text.split('\n')
+        const out = []
+        let i = 0
+
+        while (i < lines.length) {
+          const line = lines[i]
+          const next = lines[i + 1] || ''
+
+          if (line.includes('|') && /^[\s|:-]+$/.test(next)) {
+            const headers = line.split('|').map((cell) => cell.trim()).filter((cell) => cell.length > 0)
+            const rows = []
+            i += 2
+            while (i < lines.length && lines[i].includes('|') && lines[i].trim() !== '') {
+              const cols = lines[i].split('|').map((cell) => cell.trim())
+              const filtered = cols.filter((cell, index, arr) => {
+                if (index === 0 && cell === '') return false
+                if (index === arr.length - 1 && cell === '') return false
+                return true
+              })
+              rows.push(filtered)
+              i++
+            }
+
+            let tableHtml = '<div class="md-table-wrap"><table class="md-table"><thead><tr>'
+            headers.forEach((header) => {
+              tableHtml += '<th>' + header + '</th>'
+            })
+            tableHtml += '</tr></thead><tbody>'
+            rows.forEach((row) => {
+              tableHtml += '<tr>'
+              for (let c = 0; c < headers.length; c++) {
+                tableHtml += '<td>' + (row[c] || '') + '</td>'
+              }
+              tableHtml += '</tr>'
+            })
+            tableHtml += '</tbody></table></div>'
+
+            out.push(tableHtml)
+            continue
+          }
+
+          out.push(line)
+          i++
+        }
+
+        return out.join('\n')
+      }
+
+      function convertLists(text) {
+        const lines = text.split('\n')
+        const out = []
+        let inUl = false
+        let inOl = false
+        let inTask = false
+
+        const closeLists = () => {
+          if (inTask) {
+            out.push('</ul>')
+            inTask = false
+          }
+          if (inUl) {
+            out.push('</ul>')
+            inUl = false
+          }
+          if (inOl) {
+            out.push('</ol>')
+            inOl = false
+          }
+        }
+
+        lines.forEach((line) => {
+          const taskMatch = line.match(/^\s*[-*+]\s+\[( |x|X)\]\s+(.*)$/)
+          const unordered = line.match(/^\s*[-*+]\s+(.*)$/)
+          const ordered = line.match(/^\s*\d+\.\s+(.*)$/)
+
+          if (taskMatch) {
+            if (inOl) {
+              out.push('</ol>')
+              inOl = false
+            }
+            if (inUl) {
+              out.push('</ul>')
+              inUl = false
+            }
+            if (!inTask) {
+              out.push('<ul class="md-task-list">')
+              inTask = true
+            }
+            const checked = taskMatch[1].toLowerCase() === 'x'
+            out.push('<li><input type="checkbox" disabled ' + (checked ? 'checked' : '') + '> ' + taskMatch[2] + '</li>')
+            return
+          }
+
+          if (unordered) {
+            if (inTask) {
+              out.push('</ul>')
+              inTask = false
+            }
+            if (inOl) {
+              out.push('</ol>')
+              inOl = false
+            }
+            if (!inUl) {
+              out.push('<ul>')
+              inUl = true
+            }
+            out.push('<li>' + unordered[1] + '</li>')
+            return
+          }
+
+          if (ordered) {
+            if (inTask) {
+              out.push('</ul>')
+              inTask = false
+            }
+            if (inUl) {
+              out.push('</ul>')
+              inUl = false
+            }
+            if (!inOl) {
+              out.push('<ol>')
+              inOl = true
+            }
+            out.push('<li>' + ordered[1] + '</li>')
+            return
+          }
+
+          closeLists()
+          out.push(line)
+        })
+
+        closeLists()
+        return out.join('\n')
+      }
+
+      function injectFileOps(text) {
+        return text
+          .replace(/CREATE_FILE:(\S+)/g, (match, name) => {
+            return '<span class="file-op create">[Creating: ' + escapeHtml(name) + ']</span>'
+          })
+          .replace(/EDIT_FILE:(\S+)/g, (match, name) => {
+            return '<span class="file-op edit">[Editing: ' + escapeHtml(name) + ']</span>'
+          })
+          .replace(/EDIT_REGION:(\S+)/g, (match, name) => {
+            return '<span class="file-op edit">[Region Edit: ' + escapeHtml(name) + ']</span>'
+          })
+          .replace(/READ_FILE:(\S+)/g, (match, name) => {
+            return '<span class="file-op read">[Reading: ' + escapeHtml(name) + ']</span>'
+          })
+          .replace(/DELETE_FILE:(\S+)/g, (match, name) => {
+            return '<span class="file-op delete">[Deleting: ' + escapeHtml(name) + ']</span>'
+          })
+      }
+      
+      function executeFileOperations(response) {
+    // Extract CREATE_FILE operations
+    const createRegex = /CREATE_FILE:(\S+)\n?```(\w+)?\n([\s\S]*?)```/g
+    let match
+  
+    while ((match = createRegex.exec(response)) !== null) {
+      const filename = match[1]
+      const content = match[3]
+      const fileId = fs.createFile(filename, content.trim())
+      if (!fileId) {
+        addSystemMessage('File already exists: ' + filename)
+        continue
+      }
+      openFile(fileId)
+
+      // Add confirmation message
+      addSystemMessage('✅ Created and opened ' + filename)
+    }
+  
+    // Extract EDIT_FILE operations
+    const editRegex = /EDIT_FILE:(\S+)\n?```(\w+)?\n([\s\S]*?)```/g
+    while ((match = editRegex.exec(response)) !== null) {
+      const filename = match[1]
+      const content = match[3]
+      const file = Object.values(state.files).find((f) => f.name === filename)
+
+      if (file) {
+        file.content = content.trim()
+        file.saved = false
+        file.lastModified = Date.now()
+        fs.saveToStorage()
+
+        if (state.activeTab === file.id && state.editor) {
+          state.editor.setValue(file.content)
+        }
+
+        addSystemMessage('✏️ Updated ' + filename)
+        renderFileTree()
+        renderTabs()
+      }
+    }
+
+    // Extract EDIT_REGION operations
+    const regionRegex = /EDIT_REGION:(\S+)\nSEARCH:\n```(?:\w+)?\n([\s\S]*?)```\nREPLACE:\n```(?:\w+)?\n([\s\S]*?)```/g
+    while ((match = regionRegex.exec(response)) !== null) {
+      const filename = match[1]
+      const searchContent = match[2].trim()
+      const replaceContent = match[3].trim()
+      const file = Object.values(state.files).find((f) => f.name === filename)
+
+      if (file) {
+        if (file.content.includes(searchContent)) {
+          file.content = file.content.replace(searchContent, replaceContent)
+          file.saved = false
+          file.lastModified = Date.now()
+          fs.saveToStorage()
+
+          if (state.activeTab === file.id && state.editor) {
+            state.editor.setValue(file.content)
+          }
+
+          addSystemMessage('🎯 Region updated in ' + filename)
+          renderFileTree()
+          renderTabs()
+        } else {
+          addSystemMessage('❌ Could not find search region in ' + filename)
+        }
+      }
+    }
+
+    // Extract READ_FILE operations
+    const readRegex = /READ_FILE:(\S+)/g
+    while ((match = readRegex.exec(response)) !== null) {
+      const filename = match[1]
+      const file = Object.values(state.files).find((f) => f.name === filename)
+      
+      if (file) {
+        const content = file.content
+        // Show file content in chat
+        addMessage('system', 'Content of ' + filename + ':\n```' + file.language + '\n' + content + '\n```')
+      } else {
+        addSystemMessage('❌ File not found: ' + filename)
+      }
+    }
+
+    // Extract DELETE_FILE operations
+    const deleteRegex = /DELETE_FILE:(\S+)/g
+    while ((match = deleteRegex.exec(response)) !== null) {
+      const filename = match[1]
+      const file = Object.values(state.files).find((f) => f.name === filename)
+
+      if (file) {
+        fs.deleteFile(file.id)
+        addSystemMessage('🗑️ Deleted ' + filename)
+      } else {
+        addSystemMessage('❌ File not found: ' + filename)
+      }
+    }
+
+    // Extract RUN_FILE operations
+    const runRegex = /RUN_FILE:(\S+)/g
+    while ((match = runRegex.exec(response)) !== null) {
+      const filename = match[1]
+      const file = Object.values(state.files).find((f) => f.name === filename)
+      
+      if (file) {
+        // Execute the file after a short delay to ensure everything is saved
+        setTimeout(() => {
+          runFile(filename)
+        }, 500)
+      } else {
+        addSystemMessage('❌ File not found: ' + filename)
+      }
+    }
+
+    // Extract LINT_FILE operations
+    const lintRegex = /LINT_FILE:(\S+)/g
+    while ((match = lintRegex.exec(response)) !== null) {
+      const filename = match[1]
+      const file = Object.values(state.files).find((f) => f.name === filename)
+      
+      if (file) {
+        // Lint the file after a short delay
+        setTimeout(() => {
+          lintFileByName(filename)
+        }, 500)
+      } else {
+        addSystemMessage('❌ File not found: ' + filename)
+      }
+    }
+}
+
+// Add this helper function for linting files by name
+async function lintFileByName(filename) {
+    const file = Object.values(state.files).find((f) => f.name === filename)
+    if (!file) return
+    
+    updateStatus('Analyzing ' + filename + '...', 'loading')
+    
+    try {
+        const response = await fetch(state.serverUrl + '/api/lint', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                code: file.content,
+                language: file.language
+            })
+        })
+        
+        const result = await response.json()
+        showIssuesPanel(result.issues)
+        
+        if (result.issues.length === 0) {
+            addSystemMessage('✓ No issues found in ' + filename)
+        } else {
+            addSystemMessage('Found ' + result.issues.length + ' issue(s) in ' + filename)
+        }
+    } catch (error) {
+        addSystemMessage('❌ Analysis failed for ' + filename)
+    } finally {
+        updateStatus('Ready')
+    }
+}
+      
+      // Message Handling
+      function addMessage(role, content) {
+        const container = document.getElementById('chatMessages')
+        if (!container) return
+      
+        // Remove empty state if present
+        if (container.querySelector('.empty-state')) {
+          container.innerHTML = ''
+        }
+      
+        const msgDiv = createMessageElement(role, content)
+        container.appendChild(msgDiv)
+        container.scrollTop = container.scrollHeight
+      }
+      
+      function createMessageElement(role, content) {
+        const div = document.createElement('div')
+        div.className = 'message ' + role
+      
+        const time = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+        const processedContent = role === 'assistant' ? processAIResponse(content) : escapeHtml(content).replace(/\n/g, '<br>')
+        const avatar = role === 'user' ? '👤' : '🤖'
+        const author = role === 'user' ? 'You' : 'Galaxy'
+      
+        div.innerHTML = '<div class="message-header">' + '<div class="message-avatar">' + avatar + '</div>' + '<span class="message-author">' + author + '</span>' + '<span>' + time + '</span>' + '</div>' + '<div class="message-content">' + processedContent + '</div>'
+      
+        return div
+      }
+      
+      function addSystemMessage(text) {
+        const container = document.getElementById('chatMessages')
+        if (!container) return
+      
+        const div = document.createElement('div')
+        div.style.cssText = 'padding: 8px 16px; margin: 8px 0; background: var(--success); color: white; border-radius: 6px; font-size: 12px; text-align: center;'
+        div.textContent = text
+        container.appendChild(div)
+        container.scrollTop = container.scrollHeight
+      }
+      
+      function showTypingIndicator() {
+        const container = document.getElementById('chatMessages')
+        if (!container) return
+      
+        const div = document.createElement('div')
+        div.id = 'typingIndicator'
+        div.className = 'message assistant'
+        div.innerHTML = '<div class="message-header">' + '<div class="message-avatar">🤖</div>' + '<span class="message-author">Galaxy</span>' + '<span class="loading">typing...</span>' + '</div>' + '<div class="message-content" style="color: var(--text-secondary)">Thinking...</div>'
+        container.appendChild(div)
+        container.scrollTop = container.scrollHeight
+      }
+      
+      function hideTypingIndicator() {
+        const indicator = document.getElementById('typingIndicator')
+        if (indicator) indicator.remove()
+      }
+      
+      // Utilities
+      function handleKeydownHandler(e) {
+    if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault()
+        if (imageMode) {
+            generateImageFromPrompt()
+        } else {
+            sendMessageHandler()
+        }
+    }
+}
+      
+      function autoResizeHandler(textarea) {
+        textarea.style.height = 'auto'
+        textarea.style.height = Math.min(textarea.scrollHeight, 150) + 'px'
+      }
+      
+      function escapeHtml(text) {
+        const div = document.createElement('div')
+        div.textContent = text
+        return div.innerHTML
+      }
+      
+      function updateStatus(text, type) {
+        const bar = document.getElementById('statusBar')
+        if (!bar) return
+      
+        bar.className = 'status-bar ' + (type || '')
+      
+        const fileStatus = document.getElementById('fileStatus')
+        if (fileStatus) fileStatus.textContent = text
+      }
+      
+      function switchViewHandler(view, e) {
+        if (e && e.target) {
+          document.querySelectorAll('.activity-item').forEach((i) => i.classList.remove('active'))
+          e.target.classList.add('active')
+        }
+      }
+      
+      function newFileHandler() {
+        const name = prompt('Enter file name:', 'untitled.py')
+        if (name) {
+          const id = fs.createFile(name)
+          if (!id) {
+            alert('File already exists. Choose a new name.')
+            return
+          }
+          openFile(id)
+        }
+      }
+      
+      function newFolderHandler() {
+        alert('Folders coming soon! For now, use file prefixes like "src/main.py"')
+      }
+      
+      function refreshExplorerHandler() {
+        renderFileTree()
+      }
+      
+      function clearChatHandler() {
+        if (confirm('Clear conversation history? This will delete all messages in the current thread.')) {
+          // Clear messages in current thread
+          if (state.currentThread) {
+            const threads = conversationManager.loadThreads()
+            if (threads[state.currentThread]) {
+              threads[state.currentThread].messages = []
+              threads[state.currentThread].updated = Date.now()
+              conversationManager.saveThreads(threads)
+            }
+          }
+          
+          const container = document.getElementById('chatMessages')
+          if (container) {
+            container.innerHTML = '<div class="empty-state"><div class="empty-state-icon">🤖</div><p>Start a conversation with Galaxy</p><p style="font-size: 12px; margin-top: 8px; opacity: 0.7;">Try: "Create a main.py that calculates fibonacci"</p></div>'
+          }
+        }
+      }
+      
+      function loadExampleHandler() {
+        const example = 'Create a simple Python web server:\n\n' + 'CREATE_FILE:server.py\n' + '```python\n' + 'from flask import Flask, jsonify\n' + 'app = Flask(__name__)\n\n' + "@app.route('/')\n" + 'def home():\n' + '    return jsonify({"message": "Hello from Galaxy Workspace!"})\n\n' + "if __name__ == '__main__':\n" + '    app.run(debug=True)\n' + '```\n\n' + 'CREATE_FILE:requirements.txt\n' + '```\n' + 'flask==3.0.0\n' + '```'
+      
+        const input = document.getElementById('chatInput')
+        if (input) {
+          input.value = example
+          autoResizeHandler(input)
+          sendMessageHandler()
+        }
+      }
+      
+      function showShortcutsHandler() {
+        alert('Keyboard Shortcuts:\n' + '- Enter: Send message\n' + '- Shift+Enter: New line in chat\n' + '- Ctrl+N: New file\n' + '- Ctrl+W: Close tab\n\n' + 'AI Commands:\n' + '- /files or /ls: List all files\n' + '- /open filename: Open a file\n' + '- /clear: Clear chat\n\n' + 'The AI can:\n' + '- Create files with CREATE_FILE:filename\n' + '- Edit files with EDIT_FILE:filename\n' + '- Read files with READ_FILE:filename\n' + '- Delete files with DELETE_FILE:filename')
+      }
+      
+      function copyToChatHandler(btn) {
+        const code = btn.closest('.code-block').querySelector('pre').textContent
+        navigator.clipboard.writeText(code).then(() => {
+          btn.textContent = '✓ Copied'
+          setTimeout(() => (btn.textContent = '📋 Copy'), 2000)
+        })
+      }
+      
+      function insertIntoEditorHandler(btn) {
+        if (!state.editor) return
+        const code = btn.closest('.code-block').querySelector('pre').textContent
+        const position = state.editor.getPosition()
+        if (monaco && monaco.Range) {
+          state.editor.executeEdits('', [
+            {
+              range: new monaco.Range(position.lineNumber, position.column, position.lineNumber, position.column),
+              text: code
+            }
+          ])
+        }
+      }
+      
+      function showContextMenu(e, fileId) {
+        e.preventDefault()
+        const menu = document.getElementById('contextMenu')
+        if (!menu) return
+      
+        menu.style.left = e.pageX + 'px'
+        menu.style.top = e.pageY + 'px'
+        menu.classList.add('show')
+        menu.dataset.fileId = fileId
+      }
+      
+      function contextActionHandler(action) {
+        const menu = document.getElementById('contextMenu')
+        if (!menu) return
+      
+        const fileId = menu.dataset.fileId
+        menu.classList.remove('show')
+      
+        if (action === 'open') openFile(fileId)
+        else if (action === 'rename') {
+          const file = state.files[fileId]
+          if (file) {
+            const newName = prompt('New name:', file.name)
+            if (newName) fs.renameFile(fileId, newName)
+          }
+        } else if (action === 'delete') {
+          if (confirm('Delete this file?')) fs.deleteFile(fileId)
+        }
+      }
+      
+      // Assign handlers to window for inline event handlers
+      window.newFileHandler = newFileHandler
+      window.newFolderHandler = newFolderHandler
+      window.refreshExplorerHandler = refreshExplorerHandler
+      window.sendMessageHandler = sendMessageHandler
+      window.handleKeydownHandler = handleKeydownHandler
+      window.autoResizeHandler = autoResizeHandler
+      window.switchViewHandler = switchViewHandler
+      window.loadExampleHandler = loadExampleHandler
+      window.showShortcutsHandler = showShortcutsHandler
+      window.clearChatHandler = clearChatHandler
+      window.closeTabHandler = closeTabHandler
+      window.copyToChatHandler = copyToChatHandler
+      window.insertIntoEditorHandler = insertIntoEditorHandler
+      window.contextActionHandler = contextActionHandler
+      // Assign handlers to window for inline event handlers
+      window.newFileHandler = newFileHandler
+      window.newFolderHandler = newFolderHandler
+      window.refreshExplorerHandler = refreshExplorerHandler
+      window.sendMessageHandler = sendMessageHandler
+      window.handleKeydownHandler = handleKeydownHandler
+      window.autoResizeHandler = autoResizeHandler
+      window.switchViewHandler = switchViewHandler
+      window.loadExampleHandler = loadExampleHandler
+      window.showShortcutsHandler = showShortcutsHandler
+      window.clearChatHandler = clearChatHandler
+      window.closeTabHandler = closeTabHandler
+      window.copyToChatHandler = copyToChatHandler
+      window.insertIntoEditorHandler = insertIntoEditorHandler
+      window.contextActionHandler = contextActionHandler
+      
+      // New tool handlers
+      window.openTerminal = openTerminal
+      window.closeTerminal = closeTerminal
+      window.handleTerminalCommand = handleTerminalCommand
+      window.runFile = runFile
+      window.formatCurrentFile = formatCurrentFile
+      window.lintCurrentFile = lintCurrentFile
+      
+      // Terminal/Console
+      function openTerminal() {
+        const terminalHtml = `
+          <div class="terminal-pane">
+            <div class="terminal-header">
+              <span>Terminal</span>
+              <button onclick="closeTerminal()" class="icon-btn-sm">✕</button>
+            </div>
+            <div class="terminal-content">
+              <div class="terminal-output" id="terminalOutput"></div>
+              <div class="terminal-input">
+                <span class="prompt">$</span>
+                <input type="text" id="terminalInput" placeholder="Type a command..." 
+                       onkeydown="handleTerminalCommand(event)">
+              </div>
+            </div>
+          </div>
+        `
+      
+        // Add terminal pane next to editor
+        const container = document.getElementById('editorContainer')
+        const pane = document.createElement('div')
+        pane.className = 'terminal-container'
+        pane.innerHTML = terminalHtml
+        container.appendChild(pane)
+      
+        // Focus input
+        setTimeout(() => document.getElementById('terminalInput').focus(), 100)
+      }
+      
+      function closeTerminal() {
+        const terminal = document.querySelector('.terminal-container')
+        if (terminal) terminal.remove()
+      }
+      
+      async function handleTerminalCommand(e) {
+        if (e.key === 'Enter') {
+          const input = document.getElementById('terminalInput')
+          const command = input.value.trim()
+          const output = document.getElementById('terminalOutput')
+      
+          if (!command) return
+      
+          // Add command to output
+          output.innerHTML += '<div class="command">$ ' + command + '</div>'
+      
+          // Process command
+          if (command === 'clear') {
+            output.innerHTML = ''
+          } else if (command.startsWith('run ')) {
+            const filename = command.split(' ')[1]
+            await runFile(filename)
+          } else if (command === 'ls' || command === 'dir') {
+            const files = Object.values(state.files)
+            if (files.length === 0) {
+              output.innerHTML += '<div class="output">(no files)</div>'
+            } else {
+              files.forEach((f) => {
+                output.innerHTML += '<div class="output">' + f.name + '</div>'
+              })
+            }
+          } else if (command === 'help') {
+            output.innerHTML += '<div class="output">Available commands:</div>' + '<div class="output">- ls/dir: List files</div>' + '<div class="output">- run [filename]: Execute file</div>' + '<div class="output">- clear: Clear terminal</div>' + '<div class="output">- help: Show this help</div>'
+          } else {
+            output.innerHTML += '<div class="output">Command not found: ' + command + '</div>'
+          }
+      
+          input.value = ''
+          output.scrollTop = output.scrollHeight
+        }
+      }
+      
+      async function runFile(filename) {
+    const file = Object.values(state.files).find((f) => f.name === filename)
+    if (!file) {
+        addSystemMessage('File "' + filename + '" not found')
+        return
+    }
+
+    updateStatus('Running ' + filename + '...', 'loading')
+
+    try {
+        const response = await fetch(state.serverUrl + '/api/execute', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                code: file.content,
+                language: file.language
+            })
+        })
+
+        const result = await response.json()
+
+        // Show results in modal
+        showExecutionResultModal(filename, result)
+        
+        if (result.success) {
+            addSystemMessage('✓ ' + filename + ' executed successfully - View results in modal')
+        } else {
+            addSystemMessage('❌ Error in ' + filename + ' - View details in modal')
+        }
+    } catch (error) {
+        addSystemMessage('❌ Failed to execute ' + filename + ': ' + error.message)
+        showExecutionResultModal(filename, {
+            success: false,
+            error: error.message,
+            output: ''
+        })
+    } finally {
+        updateStatus('Ready')
+    }
+}
+
+function showExecutionResultModal(filename, result) {
+    // Create modal HTML
+    const modalHtml = `
+        <div class="modal-overlay" id="executionModal" style="position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.8); display: flex; align-items: center; justify-content: center; z-index: 10000;">
+            <div class="modal-content" style="background: var(--panel); border: 1px solid var(--border); border-radius: 12px; width: 80%; max-width: 800px; max-height: 80vh; display: flex; flex-direction: column; overflow: hidden;">
+                <div class="modal-header" style="padding: 16px; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center;">
+                    <h3 style="margin: 0; font-size: 16px;">
+                        ${result.success ? '✅' : '❌'} Execution Results: ${filename}
+                    </h3>
+                    <button onclick="closeExecutionModal()" style="background: none; border: none; color: var(--text-secondary); cursor: pointer; font-size: 20px; padding: 0 8px;">×</button>
+                </div>
+                
+                <div class="modal-body" style="flex: 1; overflow-y: auto; padding: 20px;">
+                    ${result.success ? `
+                        <div style="margin-bottom: 20px;">
+                            <h4 style="margin-bottom: 8px; color: var(--success);">✅ Execution Successful</h4>
+                            <p style="color: var(--text-secondary); font-size: 13px;">The file executed without errors.</p>
+                        </div>
+                    ` : `
+                        <div style="margin-bottom: 20px;">
+                            <h4 style="margin-bottom: 8px; color: var(--danger);">❌ Execution Failed</h4>
+                            <p style="color: var(--text-secondary); font-size: 13px;">${result.error || 'Unknown error occurred'}</p>
+                            ${result.traceback ? `
+                                <details style="margin-top: 10px;">
+                                    <summary style="cursor: pointer; color: var(--accent); font-size: 13px;">Show Traceback</summary>
+                                    <pre style="background: var(--bg); padding: 10px; border-radius: 6px; margin-top: 8px; font-size: 12px; overflow-x: auto; color: var(--danger);">${escapeHtml(result.traceback)}</pre>
+                                </details>
+                            ` : ''}
+                        </div>
+                    `}
+                    
+                    ${result.output ? `
+                        <div>
+                            <h4 style="margin-bottom: 8px; display: flex; justify-content: space-between; align-items: center;">
+                                <span>Output:</span>
+                                <button onclick="copyExecutionOutput()" style="background: var(--panel); border: 1px solid var(--border); color: var(--text-secondary); padding: 4px 12px; border-radius: 6px; cursor: pointer; font-size: 12px;">📋 Copy Output</button>
+                            </h4>
+                            <div class="output-container" style="background: var(--bg); border-radius: 8px; padding: 16px; max-height: 300px; overflow-y: auto; font-family: monospace; font-size: 13px; line-height: 1.5; white-space: pre-wrap;">
+                                ${escapeHtml(result.output)}
+                            </div>
+                        </div>
+                    ` : `
+                        <div style="text-align: center; padding: 40px; color: var(--text-secondary);">
+                            <div style="font-size: 48px; margin-bottom: 16px;">📝</div>
+                            <p>No output generated.</p>
+                        </div>
+                    `}
+                </div>
+                
+                <div class="modal-footer" style="padding: 16px; border-top: 1px solid var(--border); display: flex; justify-content: flex-end; gap: 8px;">
+                    <button onclick="closeExecutionModal()" style="background: var(--bg); border: 1px solid var(--border); color: var(--text); padding: 8px 16px; border-radius: 6px; cursor: pointer; font-size: 13px;">Close</button>
+                    ${result.output ? `
+                        <button onclick="downloadExecutionOutput('${filename}', \`${escapeHtml(result.output).replace(/`/g, '\\`')}\`)" style="background: var(--accent); border: none; color: white; padding: 8px 16px; border-radius: 6px; cursor: pointer; font-size: 13px;">📥 Download Output</button>
+                    ` : ''}
+                </div>
+            </div>
+        </div>
+    `;
+    
+    // Remove existing modal if any
+    const existingModal = document.getElementById('executionModal');
+    if (existingModal) {
+        existingModal.remove();
+    }
+    
+    // Add modal to body
+    document.body.insertAdjacentHTML('beforeend', modalHtml);
+    
+    // Store output for copying
+    window.lastExecutionOutput = result.output;
+}
+
+function closeExecutionModal() {
+    const modal = document.getElementById('executionModal');
+    if (modal) {
+        modal.remove();
+    }
+    window.lastExecutionOutput = null;
+}
+
+function copyExecutionOutput() {
+    if (window.lastExecutionOutput) {
+        navigator.clipboard.writeText(window.lastExecutionOutput).then(() => {
+            // Show feedback
+            const copyBtn = document.querySelector('button[onclick="copyExecutionOutput()"]');
+            if (copyBtn) {
+                const originalText = copyBtn.textContent;
+                copyBtn.textContent = '✓ Copied!';
+                copyBtn.style.color = 'var(--success)';
+                setTimeout(() => {
+                    copyBtn.textContent = originalText;
+                    copyBtn.style.color = 'var(--text-secondary)';
+                }, 2000);
+            }
+        });
+    }
+}
+
+function downloadExecutionOutput(filename, output) {
+    if (!output) return;
+    
+    const blob = new Blob([output], { type: 'text/plain' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${filename.replace(/\.[^/.]+$/, '')}_output.txt`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+}
+      
+      // Code Formatting
+      async function formatCurrentFile() {
+        if (!state.activeTab) return
+      
+        const file = state.files[state.activeTab]
+        if (!file) return
+      
+        updateStatus('Formatting...', 'loading')
+      
+        try {
+          const response = await fetch(state.serverUrl + '/api/format', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              code: file.content,
+              language: file.language
+            })
+          })
+      
+          const result = await response.json()
+      
+          if (result.success) {
+            file.content = result.formatted
+            if (state.editor) {
+              state.editor.setValue(result.formatted)
+            }
+            addSystemMessage('✓ Code formatted')
+          }
+        } catch (error) {
+          addSystemMessage('❌ Formatting failed')
+        } finally {
+          updateStatus('Ready')
+        }
+      }
+      
+      // Linting
+      async function lintCurrentFile() {
+        if (!state.activeTab) return
+      
+        const file = state.files[state.activeTab]
+        if (!file) return
+      
+        updateStatus('Analyzing code...', 'loading')
+      
+        try {
+          const response = await fetch(state.serverUrl + '/api/lint', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              code: file.content,
+              language: file.language
+            })
+          })
+      
+          const result = await response.json()
+      
+          // Show issues in a panel
+          showIssuesPanel(result.issues)
+      
+          if (result.issues.length === 0) {
+            addSystemMessage('✓ No issues found')
+          } else {
+            addSystemMessage('Found ' + result.issues.length + ' issue(s)')
+          }
+        } catch (error) {
+          addSystemMessage('❌ Analysis failed')
+        } finally {
+          updateStatus('Ready')
+        }
+      }
+      
+      function showIssuesPanel(issues) {
+        let issuesHtml = '<div class="issues-panel">'
+        issuesHtml += '<div class="issues-header">Code Issues</div>'
+      
+        if (issues.length === 0) {
+          issuesHtml += '<div class="no-issues">✓ No issues found</div>'
+        } else {
+          issues.forEach((issue) => {
+            issuesHtml += '<div class="issue ' + issue.severity + '">' + '<span class="issue-loc">Line ' + issue.line + ', Col ' + issue.column + '</span>' + '<span class="issue-msg">' + issue.message + '</span>' + '</div>'
+          })
+        }
+      
+        issuesHtml += '</div>'
+      
+        // Create or update issues panel
+        let panel = document.getElementById('issuesPanel')
+        if (!panel) {
+          panel = document.createElement('div')
+          panel.id = 'issuesPanel'
+          panel.className = 'issues-container'
+          document.querySelector('.editor-area').appendChild(panel)
+        }
+      
+        panel.innerHTML = issuesHtml
+      }
+      
+      // Initialize
+      window.onload = () => {
+        if (typeof puter === 'undefined') {
+          updateStatus('Error: Puter.js not loaded', 'error')
+          return
+        }
+      
+        // Log server context for debugging
+        console.log('Server context loaded:', state.systemContext ? 'Yes' : 'No')
+        console.log('Initial files from server:', Object.keys(state.files).length)
+      
+        renderFileTree()
+        updateStatus('Ready - Server Context Active')
+      }
+      
+      // Close context menu on click elsewhere
+      document.addEventListener('click', (e) => {
+        if (!e.target.closest('.context-menu')) {
+          const menu = document.getElementById('contextMenu')
+          if (menu) menu.classList.remove('show')
+        }
+      })
+      
+      // Keyboard shortcuts
+      document.addEventListener('keydown', (e) => {
+        if (e.ctrlKey || e.metaKey) {
+          if (e.key === 'n') {
+            e.preventDefault()
+            newFileHandler()
+          }
+          if (e.key === 'w' && state.activeTab) {
+            e.preventDefault()
+            closeTabHandler(state.activeTab)
+          }
+        }
+      })
+
+    // Image Generation Variables
+let imageMode = false;
+let imageParams = {
+    model: 'dall-e-3',
+    quality: 'standard',
+    style: 'vivid',
+    size: '1024x1024',
+    numberOfImages: 1
+};
+
+// Toggle between text chat and image generation
+function toggleImageMode() {
+    imageMode = !imageMode;
+    const chatInput = document.getElementById('chatInput');
+    const imageModeBtn = document.getElementById('imageModeBtn');
+    const generateImageBtn = document.getElementById('generateImageBtn');
+    const modelSelect = document.getElementById('modelSelect');
+    
+    if (imageMode) {
+        // Switch to image mode
+        chatInput.placeholder = "Describe the image you want to generate...";
+        imageModeBtn.style.background = 'var(--accent)';
+        imageModeBtn.style.color = 'white';
+        generateImageBtn.style.display = 'flex';
+        
+        // Show image parameters panel
+        showImageParamsPanel();
+        
+        // Select an image model by default
+        const imageModels = ['dall-e-3', 'flux-dev', 'playground-v2.5'];
+        if (!imageModels.includes(modelSelect.value)) {
+            modelSelect.value = 'dall-e-3';
+            updateModelStatus();
+        }
+    } else {
+        // Switch back to chat mode
+        chatInput.placeholder = "Ask Galaxy to code... (Shift+Enter for new line)";
+        imageModeBtn.style.background = '';
+        imageModeBtn.style.color = '';
+        generateImageBtn.style.display = 'none';
+        
+        // Hide image parameters panel
+        hideImageParamsPanel();
+    }
+}
+
+// Show image parameters panel
+function showImageParamsPanel() {
+    const chatMessages = document.getElementById('chatMessages');
+    if (!chatMessages) return;
+    
+    // Remove existing panel if any
+    const existingPanel = document.getElementById('imageParamsPanel');
+    if (existingPanel) existingPanel.remove();
+    
+    const panel = document.createElement('div');
+    panel.id = 'imageParamsPanel';
+    panel.className = 'image-prompt-container';
+    
+    panel.innerHTML = `
+        <div style="margin-bottom: 8px;">
+            <div style="display: flex; justify-content: space-between; align-items: center;">
+                <span style="font-size: 12px; font-weight: 600;">🖼️ Image Generation</span>
+                <button onclick="hideImageParamsPanel()" class="icon-btn-sm" style="font-size: 12px;">✕</button>
+            </div>
+            <div style="font-size: 11px; color: var(--text-secondary); margin-top: 4px;">
+                Configure image parameters below
+            </div>
+        </div>
+        
+        <div class="image-params">
+            <div class="param-group">
+                <label class="param-label">Model</label>
+                <select class="param-select" id="imageModelSelect" onchange="updateImageParam('model', this.value)">
+                    <option value="dall-e-3">DALL-E 3</option>
+                    <option value="flux-dev">Flux Dev</option>
+                    <option value="playground-v2.5">Playground v2.5</option>
+                    <option value="stable-diffusion-3.5-large">Stable Diffusion 3.5</option>
+                    <option value="midjourney-v6">Midjourney v6</option>
+                </select>
+            </div>
+            
+            <div class="param-group">
+                <label class="param-label">Quality</label>
+                <select class="param-select" id="imageQualitySelect" onchange="updateImageParam('quality', this.value)">
+                    <option value="standard">Standard</option>
+                    <option value="hd">HD</option>
+                </select>
+            </div>
+            
+            <div class="param-group">
+                <label class="param-label">Style</label>
+                <select class="param-select" id="imageStyleSelect" onchange="updateImageParam('style', this.value)">
+                    <option value="vivid">Vivid</option>
+                    <option value="natural">Natural</option>
+                    <option value="realistic">Realistic</option>
+                    <option value="anime">Anime</option>
+                    <option value="cartoon">Cartoon</option>
+                </select>
+            </div>
+            
+            <div class="param-group">
+                <label class="param-label">Size</label>
+                <select class="param-select" id="imageSizeSelect" onchange="updateImageParam('size', this.value)">
+                    <option value="1024x1024">1024×1024</option>
+                    <option value="1024x1792">1024×1792</option>
+                    <option value="1792x1024">1792×1024</option>
+                    <option value="512x512">512×512</option>
+                    <option value="768x768">768×768</option>
+                </select>
+            </div>
+            
+            <div class="param-group">
+                <label class="param-label">Number</label>
+                <select class="param-select" id="imageNumberSelect" onchange="updateImageParam('numberOfImages', parseInt(this.value))">
+                    <option value="1">1</option>
+                    <option value="2">2</option>
+                    <option value="3">3</option>
+                    <option value="4">4</option>
+                </select>
+            </div>
+            
+            <div class="param-group" style="grid-column: 1 / -1;">
+                <label class="param-label">Negative Prompt (optional)</label>
+                <input type="text" class="param-input" id="negativePromptInput" 
+                       placeholder="Things to avoid in the image..."
+                       onchange="updateImageParam('negativePrompt', this.value)">
+            </div>
+        </div>
+        
+        <div style="margin-top: 12px; display: flex; justify-content: flex-end;">
+            <button onclick="generateImageFromPrompt()" 
+                    style="background: var(--success); color: white; border: none; padding: 8px 16px; border-radius: 6px; cursor: pointer; font-size: 12px; display: flex; align-items: center; gap: 6px;">
+                ✨ Generate Image
+            </button>
+        </div>
+    `;
+    
+    // Insert after chat messages or at the top
+    chatMessages.insertBefore(panel, chatMessages.firstChild);
+    
+    // Set current values
+    document.getElementById('imageModelSelect').value = imageParams.model;
+    document.getElementById('imageQualitySelect').value = imageParams.quality;
+    document.getElementById('imageStyleSelect').value = imageParams.style;
+    document.getElementById('imageSizeSelect').value = imageParams.size;
+    document.getElementById('imageNumberSelect').value = imageParams.numberOfImages;
+}
+
+// Hide image parameters panel
+function hideImageParamsPanel() {
+    const panel = document.getElementById('imageParamsPanel');
+    if (panel) panel.remove();
+    toggleImageMode(); // Also exit image mode
+}
+
+// Update image parameter
+function updateImageParam(param, value) {
+    imageParams[param] = value;
+    console.log('Updated image param:', param, value);
+}
+
+// Generate image from prompt
+async function generateImageFromPrompt() {
+    const chatInput = document.getElementById('chatInput');
+    const prompt = chatInput.value.trim();
+    
+    if (!prompt) {
+        alert('Please enter a description for the image');
+        return;
+    }
+    
+    // Clear input
+    chatInput.value = '';
+    chatInput.style.height = 'auto';
+    
+    // Add user message
+    addMessage('user', `Generate image: ${prompt}`);
+    
+    // Save to conversation history if needed
+    if (state.currentThread) {
+        conversationManager.addMessage(state.currentThread, 'user', `Generate image: ${prompt}`);
+    }
+    
+    // Show loading state
+    const chatMessages = document.getElementById('chatMessages');
+    const loadingDiv = document.createElement('div');
+    loadingDiv.className = 'loading-image';
+    loadingDiv.innerHTML = `
+        <div class="loading-spinner"></div>
+        <div>Generating image with ${imageParams.model}...</div>
+        <div style="font-size: 11px; color: var(--text-secondary);">This may take 10-30 seconds</div>
+    `;
+    chatMessages.appendChild(loadingDiv);
+    chatMessages.scrollTop = chatMessages.scrollHeight;
+    
+    // Prepare options for image generation
+    const options = {
+        model: imageParams.model,
+        quality: imageParams.quality,
+        style: imageParams.style,
+        size: imageParams.size,
+        numberOfImages: imageParams.numberOfImages,
+        testMode: false // Set to true for testing without using credits
+    };
+    
+    // Add negative prompt if provided
+    const negativePrompt = document.getElementById('negativePromptInput')?.value;
+    if (negativePrompt && negativePrompt.trim()) {
+        options.negativePrompt = negativePrompt.trim();
+    }
+    
+    try {
+        // Generate image using Puter AI
+        const images = await puter.ai.txt2img(prompt, options);
+        
+        // Remove loading indicator
+        loadingDiv.remove();
+        
+        // Display generated images
+        displayGeneratedImages(images, prompt);
+        
+        // Save assistant response to conversation
+        if (state.currentThread) {
+            conversationManager.addMessage(state.currentThread, 'assistant', 
+                `Generated ${images.length} image(s) based on: "${prompt}"\nModel: ${imageParams.model}, Size: ${imageParams.size}`);
+        }
+        
+        updateStatus(`Generated ${images.length} image(s)`, 'ready');
+        
+    } catch (error) {
+        // Remove loading indicator
+        loadingDiv.remove();
+        
+        // Show error
+        addMessage('assistant', `❌ Failed to generate image: ${error.message}`);
+        
+        if (state.currentThread) {
+            conversationManager.addMessage(state.currentThread, 'assistant', 
+                `❌ Failed to generate image: ${error.message}`);
+        }
+        
+        updateStatus('Image generation failed', 'error');
+        console.error('Image generation error:', error);
+    }
+}
+
+// Display generated images
+function displayGeneratedImages(images, prompt) {
+    const chatMessages = document.getElementById('chatMessages');
+    
+    const resultDiv = document.createElement('div');
+    resultDiv.className = 'image-result-container';
+    
+    let imagesHTML = '';
+    
+    if (images.length === 1) {
+        // Single image - show larger
+        imagesHTML = `
+            <img src="${images[0].src}" alt="${prompt}" class="generated-image" onclick="openImageModal('${images[0].src}', '${escapeHtml(prompt)}')">
+            <div style="font-size: 12px; color: var(--text-secondary); margin-bottom: 12px;">
+                Generated with ${imageParams.model} • ${imageParams.size}
+            </div>
+        `;
+    } else {
+        // Multiple images - show grid
+        imagesHTML = '<div class="image-grid">';
+        images.forEach((img, index) => {
+            imagesHTML += `
+                <div class="image-grid-item" onclick="openImageModal('${img.src}', '${escapeHtml(prompt)} - Image ${index + 1}')">
+                    <img src="${img.src}" alt="${prompt} - Image ${index + 1}">
+                    <div class="image-grid-overlay">Image ${index + 1}</div>
+                </div>
+            `;
+        });
+        imagesHTML += '</div>';
+        imagesHTML += `<div style="font-size: 12px; color: var(--text-secondary); margin-top: 12px;">
+            Generated ${images.length} images with ${imageParams.model}
+        </div>`;
+    }
+    
+    resultDiv.innerHTML = imagesHTML + `
+        <div class="image-actions">
+            <button class="image-action-btn" onclick="downloadImage('${images[0]?.src}', '${escapeHtml(prompt).replace(/'/g, "\\'")}')">
+                💾 Download
+            </button>
+            <button class="image-action-btn" onclick="regenerateImage('${escapeHtml(prompt).replace(/'/g, "\\'")}')">
+                🔄 Regenerate
+            </button>
+            <button class="image-action-btn" onclick="variationsImage('${escapeHtml(prompt).replace(/'/g, "\\'")}')">
+                🎨 Variations
+            </button>
+        </div>
+    `;
+    
+    // Create assistant message wrapper
+    const messageDiv = document.createElement('div');
+    messageDiv.className = 'message assistant';
+    messageDiv.innerHTML = `
+        <div class="message-header">
+            <div class="message-avatar">🤖</div>
+            <span class="message-author">Galaxy</span>
+            <span>${new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+        </div>
+        <div class="message-content">
+            Here are the generated image(s) for: "${prompt}"
+        </div>
+    `;
+    
+    chatMessages.appendChild(messageDiv);
+    chatMessages.appendChild(resultDiv);
+    chatMessages.scrollTop = chatMessages.scrollHeight;
+}
+
+// Open image in modal for full view
+function openImageModal(imageSrc, title) {
+    const modalHtml = `
+        <div class="modal-overlay" onclick="closeImageModal()" style="position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.9); display: flex; align-items: center; justify-content: center; z-index: 10000; cursor: pointer;">
+            <div class="modal-content" onclick="event.stopPropagation()" style="background: transparent; max-width: 90vw; max-height: 90vh; display: flex; flex-direction: column; align-items: center;">
+                <div style="background: var(--panel); padding: 8px 16px; border-radius: 8px 8px 0 0; width: 100%; display: flex; justify-content: space-between; align-items: center;">
+                    <span style="font-size: 14px; font-weight: 600;">${title}</span>
+                    <button onclick="closeImageModal()" style="background: none; border: none; color: white; font-size: 20px; cursor: pointer; padding: 0 8px;">×</button>
+                </div>
+                <img src="${imageSrc}" style="max-width: 100%; max-height: calc(90vh - 60px); border-radius: 0 0 8px 8px;">
+                <div style="margin-top: 12px; display: flex; gap: 8px;">
+                    <button onclick="downloadImage('${imageSrc}', '${escapeHtml(title).replace(/'/g, "\\'")}')" 
+                            style="background: var(--accent); color: white; border: none; padding: 8px 16px; border-radius: 6px; cursor: pointer; font-size: 12px;">
+                        💾 Download
+                    </button>
+                    <button onclick="shareImage('${imageSrc}', '${escapeHtml(title).replace(/'/g, "\\'")}')" 
+                            style="background: var(--success); color: white; border: none; padding: 8px 16px; border-radius: 6px; cursor: pointer; font-size: 12px;">
+                        📤 Share
+                    </button>
+                </div>
+            </div>
+        </div>
+    `;
+    
+    // Remove existing modal if any
+    const existingModal = document.getElementById('imageModal');
+    if (existingModal) existingModal.remove();
+    
+    // Add modal to body
+    document.body.insertAdjacentHTML('beforeend', modalHtml.replace('modal-overlay', 'modal-overlay" id="imageModal'));
+}
+
+// Close image modal
+function closeImageModal() {
+    const modal = document.getElementById('imageModal');
+    if (modal) modal.remove();
+}
+
+// Download image
+function downloadImage(imageSrc, filename) {
+    const link = document.createElement('a');
+    link.href = imageSrc;
+    link.download = `${filename.replace(/[^a-z0-9]/gi, '_').toLowerCase()}_${Date.now()}.png`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+}
+
+// Regenerate image with same prompt
+function regenerateImage(prompt) {
+    const chatInput = document.getElementById('chatInput');
+    chatInput.value = prompt;
+    generateImageFromPrompt();
+}
+
+// Generate variations
+function variationsImage(prompt) {
+    const variations = [
+        `${prompt} - cinematic lighting`,
+        `${prompt} - detailed illustration`,
+        `${prompt} - digital art`,
+        `${prompt} - photorealistic`
+    ];
+    
+    // Randomly select a variation
+    const variation = variations[Math.floor(Math.random() * variations.length)];
+    const chatInput = document.getElementById('chatInput');
+    chatInput.value = variation;
+    generateImageFromPrompt();
+}
+
+// Share image
+async function shareImage(imageSrc, title) {
+    try {
+        if (navigator.share) {
+            // Convert image to blob for sharing
+            const response = await fetch(imageSrc);
+            const blob = await response.blob();
+            const file = new File([blob], `${title}.png`, { type: 'image/png' });
+            
+            await navigator.share({
+                title: title,
+                text: 'AI Generated Image from Galaxy Workspace',
+                files: [file]
+            });
+        } else {
+            // Fallback: copy image URL
+            await navigator.clipboard.writeText(imageSrc);
+            alert('Image URL copied to clipboard!');
+        }
+    } catch (error) {
+        console.error('Share failed:', error);
+        alert('Sharing not supported on this browser');
+    }
+}
+
+// Update model status display
+function updateModelStatus() {
+    const modelSelect = document.getElementById('modelSelect');
+    const modelStatus = document.getElementById('modelStatus');
+    if (modelStatus && modelSelect) {
+        const modelName = modelSelect.value.split('/').pop();
+        modelStatus.textContent = modelName;
+    }
+}
+
+// Add event listener to model select
+document.addEventListener('DOMContentLoaded', function() {
+    const modelSelect = document.getElementById('modelSelect');
+    if (modelSelect) {
+        modelSelect.addEventListener('change', updateModelStatus);
+    }
+});
+    </script>
+  </body>
+</html>
