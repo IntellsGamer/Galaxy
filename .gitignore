@@ -163,6 +163,5 @@ cython_debug/
 
 *.db
 
-*.zip
-*.rar
+misc
 data/*
