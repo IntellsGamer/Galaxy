@@ -91,7 +91,6 @@
 ## 🔮 Roadmap & Future
 
 *This is just the beginning! Future updates may include:*
-- [*] More AI models and capabilities
 - [ ] Collaboration features
 - [ ] Plugin/extension system
 - [ ] Cloud storage integration
