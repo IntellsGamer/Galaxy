@@ -82,13 +82,23 @@ def index():
     escaped_context = system_context.replace('`', '<BACKTICK PLACEHOLDER - the character, not what you see>')
 
     # Render template
+    try:
+        provider_pref = os.getenv('AI_PROVIDER', 'puter')
+        if os.path.exists('data'):
+            if os.path.exists('data/settings.json'):
+                with open('data/settings.json', 'r') as f:
+                    provider_pref = json.load(f).get('provider', provider_pref)
+    except Exception:
+        provider_pref = os.getenv('AI_PROVIDER', 'puter')
+
     return render_template('index.html', 
                         initial_files=json.dumps(files_list),
                         initial_folders=json.dumps(folders_data),
                         initial_folder_state=json.dumps(folder_state),
                         server_url=request.host_url,
                         version='1.1.0',
-                        system_context=escaped_context)
+                        system_context=escaped_context,
+                        provider=provider_pref)
 
 
 def build_system_context(files_list, folders_list):
@@ -223,9 +233,22 @@ The system executes tool operations strictly in the order they appear in your re
 If you do NOT include COMPLETE_TASK, the system will auto-follow up with tool results so you can continue the remaining work (including additional files).
 You MUST include COMPLETE_TASK only when you are fully finished with the task.
 
+IMPORTANT - COMPLETE_TASK (MUST FOLLOW EXACTLY):
+- Use ONLY this exact format at the very end: `COMPLETE_TASK: <short completion message>`
+- Include it ONLY when ALL requested work is done and no further file ops remain.
+- If the user explicitly says not to include COMPLETE_TASK, do not include it.
+- Do not write any other text after COMPLETE_TASK.
+- Do not emit COMPLETE_TASK for intermediate steps, partial work, or when you expect an auto-followup.
+
+IMPORTANT - EMPTY RESPONSE:
+- Never return an empty assistant response.
+- If no tool ops are needed, respond with a short confirmation and (only if finished) COMPLETE_TASK.
+After doing the COMPLETE_TASK tool, you should plus on that put a message on what you did VERY VERY SHORT AND BRIEFLY
+
 VERY VERY IMPORTANT - STEP SIZE:
 Create or modify ONE file per response. Do not batch multiple file operations in a single response.
 If more files remain, do not call COMPLETE_TASK so the system can auto-follow up and you can continue.
+If it is the last file you are working on, you should call COMPLETE_TASK when finished with a short message on what you did. Do not say anything else in that response other than the command and the short message.
 If you accidentally list multiple file operations, only the first will be executed; the rest will be skipped. SO BE CAREFUL TO ONLY INCLUDE ONE FILE OPERATION PER RESPONSE. If you need to do more, break it down into multiple steps and let the system auto-follow up after each one.
 If the user requests multiple files, choose the highest-priority one first, execute it, and leave the rest for the auto-followup. Do NOT summarize other files until you are ready to execute them.
 You do not have to worry about it, the system will respond to you again and you can create or modify other files.
@@ -775,6 +798,27 @@ def openrouter_chat_stream():
             return
 
     return Response(stream_with_context(generate()), mimetype='text/plain')
+
+@app.route('/api/settings', methods=['GET', 'POST'])
+def api_settings():
+    """Persist UI settings like provider choice"""
+    settings_path = 'data/settings.json'
+    if request.method == 'GET':
+        try:
+            if os.path.exists(settings_path):
+                with open(settings_path, 'r') as f:
+                    return jsonify(json.load(f))
+        except Exception:
+            pass
+        return jsonify({})
+    data = request.json or {}
+    os.makedirs('data', exist_ok=True)
+    try:
+        with open(settings_path, 'w') as f:
+            json.dump(data, f, indent=2)
+        return jsonify({'success': True})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
 
 @app.route('/api/lint', methods=['POST'])
 def lint_code():

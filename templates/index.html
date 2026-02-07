@@ -4,7 +4,9 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Galaxy + VS Code Workspace</title>
+    {% if provider == 'puter' %}
     <script src="https://js.puter.com/v2/"></script>
+    {% endif %}
     <script src="https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.44.0/min/vs/loader.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
 
@@ -1581,7 +1583,7 @@ Use CREATE_FILE commands for all files.`
           <!-- Thread List (collapsible) -->
           <div class="chat-toolbar" style="padding: 8px 16px; border-bottom: 1px solid var(--border);">
             <button class="icon-btn-sm" onclick="toggleThreadList()" title="Toggle Thread List">📋</button>
-            <select id="modelSelect" class="model-select" style="flex: 1; max-width: 200px;">
+            <select id="modelSelect" class="model-select" style="flex: 1; max-width: 200px;" onclick="handleModelStatusClick(event)">
     <!-- Galaxy Models -->
     <optgroup label="Galaxy Models">
         <option value="moonshotai/kimi-k2.5">Kimi K2.5</option>
@@ -1656,7 +1658,7 @@ Use CREATE_FILE commands for all files.`
           <span class="status-item" id="cursorPos">Ln 1, Col 1</span>
           <span class="status-item" id="encoding">UTF-8</span>
           <span class="status-item" id="language">Python</span>
-          <span class="status-item" id="modelStatus">Kimi K2.5</span>
+          <span class="status-item" id="modelStatus" style="cursor: pointer;" onclick="handleModelStatusClick(event)">Kimi K2.5</span>
         </div>
       </div>
     </div>
@@ -1673,6 +1675,7 @@ Use CREATE_FILE commands for all files.`
 
     <script>
       // State Management
+      const serverProvider = '{{ provider }}'
       const state = {
         files: {},
         folders: [],
@@ -1687,7 +1690,7 @@ Use CREATE_FILE commands for all files.`
         isGenerating: false,
         stopRequested: false,
         lastStopNotice: false,
-        provider: 'puter',
+        provider: serverProvider || 'puter',
         openrouterModel: 'openai/gpt-4o-mini',
         editor: null,
         serverUrl: window.location.origin,
@@ -2652,7 +2655,7 @@ Use CREATE_FILE commands for all files.`
         state.isProcessing = true
         state.isGenerating = true
         updateSendButton()
-        updateStatus('Generating...', 'loading')
+        updateStatus('Fetching...', 'loading')
       
         const sendBtn = document.getElementById('sendBtn')
         if (sendBtn) sendBtn.disabled = false
@@ -2702,16 +2705,20 @@ Use CREATE_FILE commands for all files.`
       
           const modelSelect = document.getElementById('modelSelect')
           const model = modelSelect ? modelSelect.value : 'moonshotai/kimi-k2.5'
+          const modelLabel = state.provider === 'openrouter' ? (state.openrouterModel || 'openrouter') : model
       
           // Show typing indicator
           showTypingIndicator()
       
-          const response =
-            state.provider === 'openrouter'
-              ? streamFromOpenRouter(fullPrompt)
-              : await puter.ai.chat(fullPrompt, { model: model, stream: true })
+        let response
+        if (state.provider === 'openrouter') {
+          response = streamFromOpenRouter(fullPrompt)
+        } else {
+          response = await puter.ai.chat(fullPrompt, { model: model, stream: true })
+        }
       
           hideTypingIndicator()
+          updateStatus('Generating...', 'loading')
       
           // Create message container for streaming
           const msgDiv = createMessageElement('assistant', '')
@@ -2739,6 +2746,13 @@ Use CREATE_FILE commands for all files.`
             }
           }
       
+          if (!state.stopRequested && fullResponse.trim().length === 0) {
+            msgDiv.remove()
+            addWarningMessage('No response received. Check OpenRouter settings.')
+            updateStatus('Ready', 'ready')
+            return
+          }
+
           // Final processing for any file operations
           if (!state.stopRequested) {
             toolResult = await executeFileOperationsSequential(fullResponse)
@@ -2750,6 +2764,7 @@ Use CREATE_FILE commands for all files.`
 
           // Save assistant message to thread
           conversationManager.addMessage(state.currentThread, 'assistant', fullResponse)
+          updateActiveModelLabel(modelLabel)
 
           updateStatus('Ready', 'ready')
         } catch (error) {
@@ -2780,7 +2795,8 @@ Use CREATE_FILE commands for all files.`
         const modelStatus = document.getElementById('modelStatus')
         const modelSelect = document.getElementById('modelSelect')
         if (modelStatus && modelSelect) {
-          modelStatus.textContent = modelSelect.value.split('/').pop()
+          const label = state.provider === 'openrouter' ? (state.openrouterModel || modelSelect.value) : modelSelect.value
+          modelStatus.textContent = label.split('/').pop()
         }
         updateSendButton()
       }
@@ -2805,22 +2821,55 @@ Use CREATE_FILE commands for all files.`
         }
       }
 
+      function updateActiveModelLabel(label) {
+        const modelStatus = document.getElementById('modelStatus')
+        if (modelStatus) modelStatus.textContent = label.split('/').pop()
+        const modelSelect = document.getElementById('modelSelect')
+        if (modelSelect && state.provider === 'openrouter') {
+          modelSelect.value = state.openrouterModel || modelSelect.value
+        }
+      }
+
       function loadProviderSettings() {
         const storedProvider = localStorage.getItem('Galaxy_provider')
         const storedModel = localStorage.getItem('Galaxy_openrouter_model')
-        if (storedProvider) state.provider = storedProvider
+        if (storedProvider) {
+          state.provider = storedProvider
+        } else if (serverProvider) {
+          state.provider = serverProvider
+        }
         if (storedModel) state.openrouterModel = storedModel
+
+        if (state.provider === 'puter' && typeof puter === 'undefined') {
+          state.provider = 'openrouter'
+          addWarningMessage('Puter.js not loaded. Switched to OpenRouter.')
+          saveProviderSettings()
+        }
 
         const providerSelect = document.getElementById('providerSelect')
         if (providerSelect) providerSelect.value = state.provider
 
         const modelInput = document.getElementById('openrouterModelInput')
         if (modelInput) modelInput.value = state.openrouterModel
+
+        syncModelSelectForProvider()
       }
 
       function saveProviderSettings() {
         localStorage.setItem('Galaxy_provider', state.provider)
         localStorage.setItem('Galaxy_openrouter_model', state.openrouterModel)
+      }
+
+      async function saveServerSettings() {
+        try {
+          await fetch(state.serverUrl + '/api/settings', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ provider: state.provider })
+          })
+        } catch (error) {
+          // ignore
+        }
       }
 
       async function checkOpenRouterStatus() {
@@ -2847,6 +2896,7 @@ Use CREATE_FILE commands for all files.`
       }
 
       async function setProvider(provider) {
+        const previous = state.provider
         state.provider = provider
         saveProviderSettings()
         if (provider === 'openrouter') {
@@ -2857,6 +2907,16 @@ Use CREATE_FILE commands for all files.`
             statusEl.textContent = ''
           }
         }
+
+        if (previous === 'puter' && provider === 'openrouter') {
+          showRefreshModal('Switching to OpenRouter requires a refresh to unload Puter.')
+        }
+        if (previous === 'openrouter' && provider === 'puter') {
+          showRefreshModal('Switching to Puter requires a refresh to load Puter.')
+        }
+
+        syncModelSelectForProvider()
+        saveServerSettings()
       }
 
       async function* streamFromOpenRouter(prompt) {
@@ -2891,6 +2951,54 @@ Use CREATE_FILE commands for all files.`
             yield chunk
           }
         }
+      }
+
+      async function fetchOpenRouterOnce(prompt) {
+        const statusOk = await checkOpenRouterStatus()
+        if (!statusOk) {
+          addWarningMessage('OpenRouter key is missing or invalid. Please update .env and restart.')
+          return ''
+        }
+        try {
+          const response = await fetch(state.serverUrl + '/api/openrouter/chat', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              prompt,
+              model: state.openrouterModel || 'openai/gpt-4o-mini'
+            })
+          })
+          const data = await response.json()
+          if (data && data.success && data.text) return data.text
+          return ''
+        } catch (error) {
+          addWarningMessage('OpenRouter request failed.')
+          return ''
+        }
+      }
+
+      function showRefreshModal(message) {
+        const existing = document.getElementById('refreshModal')
+        if (existing) existing.remove()
+
+        const modalHtml = `
+          <div class="modal-overlay" id="refreshModal" style="position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.7); display: flex; align-items: center; justify-content: center; z-index: 10000;">
+            <div style="background: var(--panel); border: 1px solid var(--border); border-radius: 12px; width: 420px; max-width: 90vw; padding: 16px;">
+              <div style="font-size: 14px; font-weight: 600; margin-bottom: 8px;">Refresh Required</div>
+              <div style="font-size: 13px; color: var(--text-secondary); margin-bottom: 16px;">${escapeHtml(message)}</div>
+              <div style="display: flex; justify-content: flex-end; gap: 8px;">
+                <button class="code-btn" onclick="closeRefreshModal()">Later</button>
+                <button class="code-btn" style="background: var(--accent); color: white; border-color: var(--accent);" onclick="location.reload()">Refresh Now</button>
+              </div>
+            </div>
+          </div>
+        `
+        document.body.insertAdjacentHTML('beforeend', modalHtml)
+      }
+
+      function closeRefreshModal() {
+        const modal = document.getElementById('refreshModal')
+        if (modal) modal.remove()
       }
 
       function stopGenerating() {
@@ -2983,12 +3091,6 @@ Use CREATE_FILE commands for all files.`
           const model = modelSelect ? modelSelect.value : 'moonshotai/kimi-k2.5'
 
           showTypingIndicator()
-          const response =
-            state.provider === 'openrouter'
-              ? streamFromOpenRouter(followupPrompt)
-              : await puter.ai.chat(followupPrompt, { model: model, stream: true })
-          hideTypingIndicator()
-
           const msgDiv = createMessageElement('assistant', '')
           const contentDiv = msgDiv.querySelector('.message-content')
           const container = document.getElementById('chatMessages')
@@ -2998,16 +3100,34 @@ Use CREATE_FILE commands for all files.`
           container.appendChild(msgDiv)
 
           let fullResponse = ''
-          for await (const part of response) {
-            if (state.stopRequested) break
-            if (part?.text) {
-              fullResponse += part.text
+          if (state.provider === 'openrouter') {
+            fullResponse = await fetchOpenRouterOnce(followupPrompt)
+            if (fullResponse) {
               const processed = processAIResponse(fullResponse)
               contentDiv.innerHTML = processed
-              if (container) {
-                container.scrollTop = container.scrollHeight
+            }
+          } else {
+            const response = await puter.ai.chat(followupPrompt, { model: model, stream: true })
+            for await (const part of response) {
+              if (state.stopRequested) break
+              const chunk = part?.text || part
+              if (chunk) {
+                fullResponse += chunk
+                const processed = processAIResponse(fullResponse)
+                contentDiv.innerHTML = processed
+                if (container) {
+                  container.scrollTop = container.scrollHeight
+                }
               }
             }
+          }
+          hideTypingIndicator()
+
+          if (!state.stopRequested && fullResponse.trim().length === 0) {
+            msgDiv.remove()
+            addWarningMessage('No follow-up response received.')
+            updateStatus('Ready', 'ready')
+            return
           }
 
           const toolResultFollowup = await executeFileOperationsSequential(fullResponse)
@@ -3945,6 +4065,35 @@ async function lintFileByName(filename) {
           if (settingsPanel) settingsPanel.style.display = 'none'
         }
       }
+
+      function handleModelStatusClick(e) {
+        if (state.provider !== 'openrouter') return
+        switchViewHandler('settings', e)
+        const modelInput = document.getElementById('openrouterModelInput')
+        if (modelInput) {
+          modelInput.focus()
+          modelInput.select()
+        }
+      }
+
+      function syncModelSelectForProvider() {
+        const modelSelect = document.getElementById('modelSelect')
+        if (!modelSelect) return
+
+        if (state.provider === 'openrouter') {
+          const label = state.openrouterModel || 'openrouter'
+          modelSelect.innerHTML = `<option value="${escapeHtml(label)}">${escapeHtml(label)}</option>`
+          modelSelect.value = label
+        } else {
+          if (modelSelect.dataset.originalOptions) {
+            modelSelect.innerHTML = modelSelect.dataset.originalOptions
+          } else {
+            modelSelect.dataset.originalOptions = modelSelect.innerHTML
+          }
+        }
+
+        updateActiveModelLabel(state.provider === 'openrouter' ? (state.openrouterModel || 'openrouter') : modelSelect.value)
+      }
       
       function newFileHandler() {
         const baseName = 'untitled.py'
@@ -4497,6 +4646,7 @@ function downloadExecutionOutput(filename, output) {
         if (providerSelect) {
           providerSelect.addEventListener('change', async (e) => {
             await setProvider(e.target.value)
+            updateActiveModelLabel(state.provider === 'openrouter' ? (state.openrouterModel || 'openrouter') : (document.getElementById('modelSelect')?.value || ''))
           })
         }
 
@@ -4505,12 +4655,17 @@ function downloadExecutionOutput(filename, output) {
           modelInput.addEventListener('change', (e) => {
             state.openrouterModel = e.target.value.trim() || state.openrouterModel
             saveProviderSettings()
+            updateActiveModelLabel(state.openrouterModel)
+            syncModelSelectForProvider()
           })
         }
 
         if (state.provider === 'puter' && typeof puter === 'undefined') {
-          updateStatus('Error: Puter.js not loaded', 'error')
-          return
+          state.provider = 'openrouter'
+          const providerSelect = document.getElementById('providerSelect')
+          if (providerSelect) providerSelect.value = state.provider
+          syncModelSelectForProvider()
+          addWarningMessage('Puter.js not loaded. Switched to OpenRouter.')
         }
 
         // Log server context for debugging
@@ -4519,10 +4674,12 @@ function downloadExecutionOutput(filename, output) {
 
         renderFileTree()
         updateSendButton()
+        updateActiveModelLabel(state.provider === 'openrouter' ? (state.openrouterModel || 'openrouter') : (document.getElementById('modelSelect')?.value || ''))
         updateStatus('Ready - Server Context Active')
         if (state.provider === 'openrouter') {
           checkOpenRouterStatus()
         }
+        saveServerSettings()
       }
       
       // Close context menu on click elsewhere
@@ -4971,14 +5128,14 @@ async function shareImage(imageSrc, title) {
 }
 
 // Update model status display
-function updateModelStatus() {
-    const modelSelect = document.getElementById('modelSelect');
-    const modelStatus = document.getElementById('modelStatus');
-    if (modelStatus && modelSelect) {
-        const modelName = modelSelect.value.split('/').pop();
-        modelStatus.textContent = modelName;
-    }
-}
+      function updateModelStatus() {
+        const modelSelect = document.getElementById('modelSelect')
+        const modelStatus = document.getElementById('modelStatus')
+        if (modelStatus && modelSelect) {
+          const label = state.provider === 'openrouter' ? (state.openrouterModel || modelSelect.value) : modelSelect.value
+          modelStatus.textContent = label.split('/').pop()
+        }
+      }
 
 // Add event listener to model select
 document.addEventListener('DOMContentLoaded', function() {
