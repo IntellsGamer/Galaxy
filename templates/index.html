@@ -2494,6 +2494,7 @@ Use CREATE_FILE commands for all files.`
         if (sendBtn) sendBtn.disabled = true
       
         let toolResult = null
+        let fullResponse = ''
         try {
           // Check for special commands
           const commandResult = processSpecialCommands(text)
@@ -2541,8 +2542,6 @@ Use CREATE_FILE commands for all files.`
             container.innerHTML = ''
           }
           container.appendChild(msgDiv)
-      
-          let fullResponse = ''
       
           for await (const part of response) {
             if (part?.text) {
