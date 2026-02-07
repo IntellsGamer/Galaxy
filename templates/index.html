@@ -200,6 +200,56 @@
         color: var(--text-secondary);
         position: relative;
       }
+
+      .folder-item {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 6px 12px;
+        cursor: pointer;
+        border-radius: 6px;
+        font-size: 13px;
+        color: var(--text-secondary);
+        font-weight: 600;
+      }
+
+      .folder-item:hover {
+        background: var(--panel);
+        color: var(--text);
+      }
+
+      .folder-item.selected {
+        background: var(--panel);
+        color: var(--text);
+        box-shadow: inset 0 0 0 1px var(--accent);
+      }
+
+      .folder-children {
+        margin-left: 18px;
+        border-left: 1px solid var(--border);
+        padding-left: 10px;
+      }
+
+      .folder-caret {
+        font-size: 10px;
+        width: 12px;
+        display: inline-block;
+      }
+
+      .explorer-search {
+        padding: 8px 12px 0 12px;
+      }
+
+      .explorer-search input {
+        width: 100%;
+        background: var(--bg);
+        border: 1px solid var(--border);
+        color: var(--text);
+        padding: 6px 8px;
+        border-radius: 6px;
+        font-size: 12px;
+        outline: none;
+      }
       
       .file-item:hover {
         background: var(--panel);
@@ -1404,8 +1454,13 @@ Use CREATE_FILE commands for all files.`
             <div class="sidebar-actions">
               <button class="icon-btn-sm" onclick="newFile()" title="New File">📄</button>
               <button class="icon-btn-sm" onclick="newFolder()" title="New Folder">📁</button>
+              <button class="icon-btn-sm" onclick="expandAllFolders()" title="Expand All">+</button>
+              <button class="icon-btn-sm" onclick="collapseAllFolders()" title="Collapse All">-</button>
               <button class="icon-btn-sm" onclick="refreshExplorer()" title="Refresh">🔄</button>
             </div>
+          </div>
+          <div class="explorer-search">
+            <input type="text" id="fileSearchInput" placeholder="Filter files..." oninput="renderFileTree()">
           </div>
           <div class="file-tree" id="fileTree">
             <!-- Files populated by JS -->
@@ -1546,7 +1601,7 @@ Use CREATE_FILE commands for all files.`
           <span class="status-item" id="cursorPos">Ln 1, Col 1</span>
           <span class="status-item" id="encoding">UTF-8</span>
           <span class="status-item" id="language">Python</span>
-          <span class="status-item" id="modelStatus">Galaxy K2.5</span>
+          <span class="status-item" id="modelStatus">Kimi K2.5</span>
         </div>
       </div>
     </div>
@@ -1563,6 +1618,9 @@ Use CREATE_FILE commands for all files.`
       // State Management
       const state = {
         files: {},
+        folders: [],
+        folderState: {},
+        selectedFolderPath: '',
         openTabs: [],
         activeTab: null,
         currentChat: [],
@@ -1907,11 +1965,21 @@ Use CREATE_FILE commands for all files.`
           // First check if we have initial files from server template
           try {
             const initialFiles = {{ initial_files|safe }};
+            const initialFolders = {{ initial_folders|safe }};
+            const initialFolderState = {{ initial_folder_state|safe }};
             if (initialFiles && initialFiles.length > 0) {
               // Convert array to object format
               initialFiles.forEach((file) => {
                 state.files[file.id] = file
               })
+            }
+            if (Array.isArray(initialFolders) && initialFolders.length > 0) {
+              state.folders = initialFolders
+            }
+            if (initialFolderState && typeof initialFolderState === 'object') {
+              state.folderState = initialFolderState
+            }
+            if ((initialFiles && initialFiles.length > 0) || (initialFolders && initialFolders.length > 0)) {
               this.saveToStorage()
             }
           } catch (e) {
@@ -1933,9 +2001,16 @@ Use CREATE_FILE commands for all files.`
           try {
             const response = await fetch(state.serverUrl + '/api/files')
             if (response.ok) {
-              const serverFiles = await response.json()
-              if (Object.keys(serverFiles).length > 0) {
-                state.files = serverFiles
+              const payload = await response.json()
+              if (payload && payload.files) {
+                state.files = payload.files || {}
+                state.folders = payload.folders || []
+                state.folderState = payload.folderState || {}
+                this.saveToStorage()
+                return
+              }
+              if (payload && Object.keys(payload).length > 0) {
+                state.files = payload
                 this.saveToStorage()
               }
             }
@@ -1949,7 +2024,11 @@ Use CREATE_FILE commands for all files.`
             const response = await fetch(state.serverUrl + '/api/files', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify(state.files)
+              body: JSON.stringify({
+                files: state.files,
+                folders: state.folders,
+                folderState: state.folderState
+              })
             })
             return response.ok
           } catch (error) {
@@ -1959,7 +2038,7 @@ Use CREATE_FILE commands for all files.`
         }
       
         createDefaultFiles() {
-          this.createFile('README.md', '# Welcome to Galaxy Workspace\n\nThis is an AI-powered coding environment.\n\n## Features:\n- 🤖 AI-assisted coding with Galaxy K2\n- 📁 File management\n- 📝 Multi-tab editor\n- 💬 Integrated chat\n- 🔧 Server-side processing\n- 🛠️ Advanced tools\n\nTry asking Galaxy to create files for you!')
+          this.createFile('README.md', '# Welcome to Galaxy Workspace\n\nThis is an AI-powered coding environment.\n\n## Features:\n- 🤖 AI-assisted coding with Galaxy\n- 📁 File management\n- 📝 Multi-tab editor\n- 💬 Integrated chat\n- 🔧 Server-side processing\n- 🛠️ Advanced tools\n\nTry asking Galaxy to create files for you!')
           this.saveToStorage()
         }
       
@@ -2034,6 +2113,8 @@ Use CREATE_FILE commands for all files.`
       
         saveToStorage() {
           localStorage.setItem('Galaxy_workspace_files', JSON.stringify(state.files))
+          localStorage.setItem('Galaxy_workspace_folders', JSON.stringify(state.folders))
+          localStorage.setItem('Galaxy_workspace_folder_state', JSON.stringify(state.folderState))
           // Also save to server in background
           this.saveToServer().then((success) => {
             if (success) {
@@ -2047,6 +2128,14 @@ Use CREATE_FILE commands for all files.`
             const saved = localStorage.getItem('Galaxy_workspace_files')
             if (saved) {
               state.files = JSON.parse(saved)
+            }
+            const savedFolders = localStorage.getItem('Galaxy_workspace_folders')
+            if (savedFolders) {
+              state.folders = JSON.parse(savedFolders)
+            }
+            const savedFolderState = localStorage.getItem('Galaxy_workspace_folder_state')
+            if (savedFolderState) {
+              state.folderState = JSON.parse(savedFolderState)
             }
           } catch (e) {
             console.error('Failed to load files:', e)
@@ -2093,27 +2182,184 @@ Use CREATE_FILE commands for all files.`
       })
       
       // UI Rendering
-      function renderFileTree() {
-    const tree = document.getElementById('fileTree')
-    if (!tree) return
-  
-    tree.innerHTML = ''
-  
-    Object.values(state.files).forEach((file) => {
+      function buildWorkspaceTree(files, folders, filterText) {
+        const root = { name: '', type: 'folder', path: '', children: [] }
+        const folderSet = new Set((folders || []).map((f) => f.replace(/\/+$/g, '')))
+
+        const addFolderPath = (path) => {
+          if (!path) return
+          folderSet.add(path)
+        }
+
+        files.forEach((file) => {
+          const parts = file.name.split('/').filter(Boolean)
+          if (parts.length > 1) {
+            addFolderPath(parts.slice(0, -1).join('/'))
+          }
+        })
+
+        const ensureFolder = (path) => {
+          if (!path) return root
+          const parts = path.split('/').filter(Boolean)
+          let node = root
+          let currentPath = ''
+          parts.forEach((part) => {
+            currentPath = currentPath ? currentPath + '/' + part : part
+            let existing = node.children.find((child) => child.type === 'folder' && child.name === part)
+            if (!existing) {
+              existing = { name: part, type: 'folder', path: currentPath, children: [] }
+              node.children.push(existing)
+            }
+            node = existing
+          })
+          return node
+        }
+
+        folderSet.forEach((folderPath) => {
+          ensureFolder(folderPath)
+        })
+
+        files.forEach((file) => {
+          const parts = file.name.split('/').filter(Boolean)
+          if (parts.length === 1) {
+            root.children.push({ type: 'file', name: parts[0], path: parts[0], fileId: file.id })
+            return
+          }
+          const folderPath = parts.slice(0, -1).join('/')
+          const folderNode = ensureFolder(folderPath)
+          folderNode.children.push({ type: 'file', name: parts[parts.length - 1], path: file.name, fileId: file.id })
+        })
+
+        const sortTree = (node) => {
+          node.children.sort((a, b) => {
+            if (a.type !== b.type) return a.type === 'folder' ? -1 : 1
+            return a.name.localeCompare(b.name)
+          })
+          node.children.forEach((child) => {
+            if (child.type === 'folder') sortTree(child)
+          })
+        }
+
+        sortTree(root)
+
+        if (!filterText) return root
+
+        const filter = filterText.toLowerCase()
+        const prune = (node) => {
+          if (node.type === 'file') {
+            return node.name.toLowerCase().includes(filter)
+          }
+          const keptChildren = node.children.filter((child) => prune(child))
+          node.children = keptChildren
+          return keptChildren.length > 0
+        }
+
+        prune(root)
+        return root
+      }
+
+      function renderFolderNode(node, container) {
+        const item = document.createElement('div')
+        item.className = 'folder-item'
+        const isCollapsed = state.folderState[node.path] === true
+        if (state.selectedFolderPath === node.path) item.classList.add('selected')
+        const caret = isCollapsed ? '>' : 'v'
+        item.innerHTML = '<span class="folder-caret">' + caret + '</span><span class="icon">📁</span><span class="name">' + escapeHtml(node.name) + '</span>'
+        item.onclick = () => {
+          state.folderState[node.path] = !isCollapsed
+          state.selectedFolderPath = node.path
+          fs.saveToStorage()
+          renderFileTree()
+        }
+        container.appendChild(item)
+
+        if (!isCollapsed) {
+          const childrenWrap = document.createElement('div')
+          childrenWrap.className = 'folder-children'
+          node.children.forEach((child) => {
+            renderTreeNode(child, childrenWrap)
+          })
+          container.appendChild(childrenWrap)
+        }
+      }
+
+      function renderFileNode(node, container) {
+        const file = state.files[node.fileId]
+        if (!file) return
         const item = document.createElement('div')
         item.className = 'file-item'
         if (file.id === state.activeTab) item.classList.add('active')
-    
+
         const icon = getFileIcon(file.name)
-    
-        item.innerHTML = '<span class="icon">' + icon + '</span><span class="name">' + escapeHtml(file.name) + '</span>' + (file.saved == false ? '<span style=\"color: var(--accent)\">●</span>' : '')
-    
+        item.innerHTML =
+          '<span class="icon">' +
+          icon +
+          '</span><span class="name">' +
+          escapeHtml(file.name.split('/').pop()) +
+          '</span>' +
+          (file.saved == false ? '<span style="color: var(--accent)">●</span>' : '')
+
         item.onclick = () => openFile(file.id)
         item.oncontextmenu = (e) => showContextMenu(e, file.id)
-    
-        tree.appendChild(item)
-    })
-}
+        container.appendChild(item)
+      }
+
+      function renderTreeNode(node, container) {
+        if (node.type === 'folder') {
+          renderFolderNode(node, container)
+        } else {
+          renderFileNode(node, container)
+        }
+      }
+
+      function renderFileTree() {
+        const tree = document.getElementById('fileTree')
+        if (!tree) return
+
+        tree.innerHTML = ''
+        const searchInput = document.getElementById('fileSearchInput')
+        const filterText = searchInput ? searchInput.value.trim() : ''
+
+        const root = buildWorkspaceTree(Object.values(state.files), state.folders, filterText)
+        root.children.forEach((child) => {
+          renderTreeNode(child, tree)
+        })
+      }
+
+      function getAllFolderPaths() {
+        const root = buildWorkspaceTree(Object.values(state.files), state.folders, '')
+        const paths = []
+        const walk = (node) => {
+          if (node.type === 'folder' && node.path) {
+            paths.push(node.path)
+          }
+          node.children.forEach((child) => {
+            if (child.type === 'folder') walk(child)
+          })
+        }
+        root.children.forEach((child) => {
+          if (child.type === 'folder') walk(child)
+        })
+        return paths
+      }
+
+      function collapseAllFolders() {
+        const paths = getAllFolderPaths()
+        paths.forEach((path) => {
+          state.folderState[path] = true
+        })
+        fs.saveToStorage()
+        renderFileTree()
+      }
+
+      function expandAllFolders() {
+        const paths = getAllFolderPaths()
+        paths.forEach((path) => {
+          state.folderState[path] = false
+        })
+        fs.saveToStorage()
+        renderFileTree()
+      }
       
       function getFileIcon(filename) {
         if (filename.endsWith('.py')) return '🐍'
@@ -2346,10 +2592,19 @@ Use CREATE_FILE commands for all files.`
         }
       }
 
-      function buildFileTreeText(files) {
+      function buildFileTreeText(files, folders) {
         const tree = {}
         files.forEach((file) => {
           const parts = file.name.split('/').filter(Boolean)
+          let node = tree
+          parts.forEach((part) => {
+            if (!node[part]) node[part] = {}
+            node = node[part]
+          })
+        })
+
+        ;(folders || []).forEach((folder) => {
+          const parts = folder.split('/').filter(Boolean)
           let node = tree
           parts.forEach((part) => {
             if (!node[part]) node[part] = {}
@@ -2388,7 +2643,7 @@ Use CREATE_FILE commands for all files.`
         if (files.length > 0) {
           // Replace the "Current Files in Workspace (Tree):" section with current state
           let filesSection = 'Current Files in Workspace (Tree):\n'
-          filesSection += buildFileTreeText(files) + '\n'
+          filesSection += buildFileTreeText(files, state.folders) + '\n'
 
           // Find and replace the files section in the context
           const lines = context.split('\n')
@@ -2422,7 +2677,7 @@ Use CREATE_FILE commands for all files.`
         const lower = text.toLowerCase()
       
         if (lower === '/files' || lower === '/ls') {
-          const files = buildFileTreeText(Object.values(state.files))
+          const files = buildFileTreeText(Object.values(state.files), state.folders)
           return '**Workspace Files (Tree):**\\n' + (files || '(empty)')
         }
       
@@ -2448,17 +2703,21 @@ Use CREATE_FILE commands for all files.`
       }
       
       function processAIResponse(text) {
-        const withOps = injectFileOps(text)
+        const withOps = injectFileOpsTokens(text)
+        const withUnderline = applyUnderline(withOps)
+        const footnoteData = extractFootnotes(withUnderline)
 
         if (window.marked) {
-          return marked.parse(withOps, {
+          const withFootnoteRefs = replaceFootnoteRefs(footnoteData.text)
+          const html = marked.parse(withFootnoteRefs, {
             gfm: true,
             breaks: true,
             renderer: getMarkdownRenderer()
           })
+          return renderFileOps(html) + renderFootnotesHtml(footnoteData.footnotes)
         }
 
-        return renderMarkdownFallback(text)
+        return renderMarkdownFallback(withOps)
       }
 
       let markdownRendererCache = null
@@ -2500,36 +2759,8 @@ Use CREATE_FILE commands for all files.`
       }
 
       function renderMarkdownFallback(text) {
-        const fileOps = []
-        let withFileOps = text
-          .replace(/CREATE_FILE:(\S+)/g, (match, name) => {
-            const token = `@@FILEOP${fileOps.length}@@`
-            fileOps.push('<span class="file-op create">[Creating: ' + escapeHtml(name) + ']</span>')
-            return token
-          })
-          .replace(/EDIT_FILE:(\S+)/g, (match, name) => {
-            const token = `@@FILEOP${fileOps.length}@@`
-            fileOps.push('<span class="file-op edit">[Editing: ' + escapeHtml(name) + ']</span>')
-            return token
-          })
-          .replace(/EDIT_REGION:(\S+)/g, (match, name) => {
-            const token = `@@FILEOP${fileOps.length}@@`
-            fileOps.push('<span class="file-op edit">[Region Edit: ' + escapeHtml(name) + ']</span>')
-            return token
-          })
-          .replace(/READ_FILE:(\S+)/g, (match, name) => {
-            const token = `@@FILEOP${fileOps.length}@@`
-            fileOps.push('<span class="file-op read">[Reading: ' + escapeHtml(name) + ']</span>')
-            return token
-          })
-          .replace(/DELETE_FILE:(\S+)/g, (match, name) => {
-            const token = `@@FILEOP${fileOps.length}@@`
-            fileOps.push('<span class="file-op delete">[Deleting: ' + escapeHtml(name) + ']</span>')
-            return token
-          })
-
         const footnotes = {}
-        let withFootnotes = withFileOps
+        let withFootnotes = text
           .split('\n')
           .filter((line) => {
             const match = line.match(/^\[\^([^\]]+)\]:\s*(.+)$/)
@@ -2567,7 +2798,7 @@ Use CREATE_FILE commands for all files.`
 
         out = out.replace(/~~(.+?)~~/g, '<del>$1</del>')
         out = out.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
-        out = out.replace(/__(.+?)__/g, '<strong>$1</strong>')
+        out = out.replace(/__(.+?)__/g, '<u>$1</u>')
         out = out.replace(/(^|[^*])\*(?!\s)([^*]+?)\*(?!\*)/g, '$1<em>$2</em>')
         out = out.replace(/(^|[^_])_(?!\s)([^_]+?)_(?!_)/g, '$1<em>$2</em>')
         out = out.replace(/`([^`]+)`/g, '<code class="inline-code">$1</code>')
@@ -2577,17 +2808,14 @@ Use CREATE_FILE commands for all files.`
           return '<sup id="fnref-' + safeId + '"><a href="#fn-' + safeId + '">' + escapeHtml(id) + '</a></sup>'
         })
 
-        out = out.replace(/@@FILEOP(\d+)@@/g, (match, index) => {
-          const i = Number(index)
-          return fileOps[i] || match
-        })
-
         out = out.replace(/\n/g, '<br>')
 
         out = out.replace(/@@CODE(\d+)@@/g, (match, index) => {
           const i = Number(index)
           return codeBlocks[i] || match
         })
+
+        out = renderFileOps(out)
 
         const footnoteKeys = Object.keys(footnotes)
         if (footnoteKeys.length > 0) {
@@ -2763,6 +2991,86 @@ Use CREATE_FILE commands for all files.`
           .replace(/DELETE_FILE:(\S+)/g, (match, name) => {
             return '<span class="file-op delete">[Deleting: ' + escapeHtml(name) + ']</span>'
           })
+      }
+
+      function injectFileOpsTokens(text) {
+        return text
+          .replace(/CREATE_FILE:(\S+)/g, (match, name) => `[[FILEOP:create:${name}]]`)
+          .replace(/EDIT_FILE:(\S+)/g, (match, name) => `[[FILEOP:edit:${name}]]`)
+          .replace(/EDIT_REGION:(\S+)/g, (match, name) => `[[FILEOP:region:${name}]]`)
+          .replace(/READ_FILE:(\S+)/g, (match, name) => `[[FILEOP:read:${name}]]`)
+          .replace(/DELETE_FILE:(\S+)/g, (match, name) => `[[FILEOP:delete:${name}]]`)
+      }
+
+      function renderFileOps(html) {
+        return html.replace(/\[\[FILEOP:(create|edit|region|read|delete):([^\]]+)\]\]/g, (match, action, name) => {
+          const safeName = escapeHtml(name)
+          if (action === 'create') return '<span class="file-op create">[Creating: ' + safeName + ']</span>'
+          if (action === 'edit') return '<span class="file-op edit">[Editing: ' + safeName + ']</span>'
+          if (action === 'region') return '<span class="file-op edit">[Region Edit: ' + safeName + ']</span>'
+          if (action === 'read') return '<span class="file-op read">[Reading: ' + safeName + ']</span>'
+          return '<span class="file-op delete">[Deleting: ' + safeName + ']</span>'
+        })
+      }
+
+      function extractFootnotes(text) {
+        const footnotes = {}
+        const keptLines = []
+        text.split('\n').forEach((line) => {
+          const match = line.match(/^\[\^([^\]]+)\]:\s*(.+)$/)
+          if (match) {
+            footnotes[match[1]] = match[2]
+          } else {
+            keptLines.push(line)
+          }
+        })
+        return { text: keptLines.join('\n'), footnotes }
+      }
+
+      function renderFootnotesHtml(footnotes) {
+        const keys = Object.keys(footnotes)
+        if (keys.length === 0) return ''
+        let footnoteHtml = '<div class="md-footnotes"><hr><ol>'
+        keys.forEach((key) => {
+          const safeId = key.replace(/\s+/g, '-')
+          footnoteHtml +=
+            '<li id="fn-' +
+            safeId +
+            '">' +
+            escapeHtml(footnotes[key]) +
+            ' <a href="#fnref-' +
+            safeId +
+            '">back</a></li>'
+        })
+        footnoteHtml += '</ol></div>'
+        return footnoteHtml
+      }
+
+      function replaceFootnoteRefs(text) {
+        return text.replace(/\[\^([^\]]+)\]/g, (match, id) => {
+          const safeId = id.replace(/\s+/g, '-')
+          return '<sup id="fnref-' + safeId + '"><a href="#fn-' + safeId + '">' + escapeHtml(id) + '</a></sup>'
+        })
+      }
+
+      function applyUnderline(text) {
+        const codeBlocks = []
+        let temp = text.replace(/```[\s\S]*?```/g, (match) => {
+          const index = codeBlocks.push(match) - 1
+          return `@@CODEBLOCK${index}@@`
+        })
+
+        const inlineCodes = []
+        temp = temp.replace(/`[^`]*`/g, (match) => {
+          const index = inlineCodes.push(match) - 1
+          return `@@INLINE${index}@@`
+        })
+
+        temp = temp.replace(/__(.+?)__/g, '<u>$1</u>')
+
+        temp = temp.replace(/@@INLINE(\d+)@@/g, (match, index) => inlineCodes[Number(index)] || match)
+        temp = temp.replace(/@@CODEBLOCK(\d+)@@/g, (match, index) => codeBlocks[Number(index)] || match)
+        return temp
       }
       
       function executeFileOperations(response) {
@@ -3027,9 +3335,15 @@ async function lintFileByName(filename) {
       }
       
       function newFileHandler() {
-        const name = prompt('Enter file name:', 'untitled.py')
+        const baseName = 'untitled.py'
+        const suggested = state.selectedFolderPath ? state.selectedFolderPath + '/' + baseName : baseName
+        const name = prompt('Enter file name:', suggested)
         if (name) {
-          const id = fs.createFile(name)
+          let finalName = name.trim()
+          if (state.selectedFolderPath && finalName && !finalName.includes('/')) {
+            finalName = state.selectedFolderPath + '/' + finalName
+          }
+          const id = fs.createFile(finalName)
           if (!id) {
             alert('File already exists. Choose a new name.')
             return
@@ -3039,7 +3353,19 @@ async function lintFileByName(filename) {
       }
       
       function newFolderHandler() {
-        alert('Folders coming soon! For now, use file prefixes like "src/main.py"')
+        const name = prompt('Enter folder name:', 'src')
+        if (!name) return
+        const trimmed = name.trim().replace(/\/+$/g, '')
+        if (!trimmed) return
+
+        if (state.folders.includes(trimmed)) {
+          alert('Folder already exists.')
+          return
+        }
+
+        state.folders.push(trimmed)
+        fs.saveToStorage()
+        renderFileTree()
       }
       
       function refreshExplorerHandler() {
@@ -3136,6 +3462,8 @@ async function lintFileByName(filename) {
       window.newFileHandler = newFileHandler
       window.newFolderHandler = newFolderHandler
       window.refreshExplorerHandler = refreshExplorerHandler
+      window.collapseAllFolders = collapseAllFolders
+      window.expandAllFolders = expandAllFolders
       window.sendMessageHandler = sendMessageHandler
       window.handleKeydownHandler = handleKeydownHandler
       window.autoResizeHandler = autoResizeHandler

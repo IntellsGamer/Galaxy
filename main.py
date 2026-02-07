@@ -22,6 +22,8 @@ THREADS_FILE = 'data/threads.json'
 def index():
     # Get initial files from storage if they exist
     files_data = {}
+    folders_data = []
+    folder_state = {}
     files_list = []
     
     try:
@@ -29,7 +31,13 @@ def index():
         if os.path.exists('data'):
             if os.path.exists('data/files.json'):
                 with open('data/files.json', 'r') as f:
-                    files_data = json.load(f)
+                    payload = json.load(f)
+                    if isinstance(payload, dict) and 'files' in payload:
+                        files_data = payload.get('files', {})
+                        folders_data = payload.get('folders', [])
+                        folder_state = payload.get('folderState', {})
+                    else:
+                        files_data = payload
                     files_list = list(files_data.values())
     except:
         pass
@@ -48,7 +56,7 @@ def index():
         ]
     
     # Build the system context/prompt server-side
-    system_context = build_system_context(files_list)
+    system_context = build_system_context(files_list, folders_data)
 
     # Escape for JavaScript - replace backticks with a placeholder
     escaped_context = system_context.replace('`', 'BACKTICK_PLACEHOLDER (the character - this is not what you should repeat)')
@@ -56,12 +64,14 @@ def index():
     # Render template
     return render_template('index.html', 
                         initial_files=json.dumps(files_list),
+                        initial_folders=json.dumps(folders_data),
+                        initial_folder_state=json.dumps(folder_state),
                         server_url=request.host_url,
                         version='1.1.0',
                         system_context=escaped_context)
 
 
-def build_system_context(files_list):
+def build_system_context(files_list, folders_list):
     """Build the AI system context/prompt server-side"""
     def build_file_tree(names):
         tree = {}
@@ -142,10 +152,13 @@ CONVERSATION THREADS:
 Current Files in Workspace (Tree):
 """
     
-    if not files_list:
+    names = [file['name'] for file in files_list] if files_list else []
+    if folders_list:
+        names.extend(folders_list)
+
+    if not names:
         context += "📁 Workspace\n└── (empty)\n"
     else:
-        names = [file['name'] for file in files_list]
         tree_lines = render_tree(build_file_tree(names))
         context += "📁 Workspace\n"
         for line in tree_lines:
@@ -188,18 +201,33 @@ def get_files():
     try:
         if os.path.exists('data/files.json'):
             with open('data/files.json', 'r') as f:
-                return jsonify(json.load(f))
+                payload = json.load(f)
+                if isinstance(payload, dict) and 'files' in payload:
+                    return jsonify(payload)
+                return jsonify({'files': payload, 'folders': [], 'folderState': {}})
     except:
         pass
-    return jsonify({})
+    return jsonify({'files': {}, 'folders': [], 'folderState': {}})
 
 @app.route('/api/files', methods=['POST'])
 def save_files():
     """Save all files"""
     try:
-        files = request.json
+        payload = request.json
+        if isinstance(payload, dict) and 'files' in payload:
+            data = {
+                'files': payload.get('files', {}),
+                'folders': payload.get('folders', []),
+                'folderState': payload.get('folderState', {})
+            }
+        else:
+            data = {
+                'files': payload or {},
+                'folders': [],
+                'folderState': {}
+            }
         with open('data/files.json', 'w') as f:
-            json.dump(files, f, indent=2)
+            json.dump(data, f, indent=2)
         return jsonify({'success': True})
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
