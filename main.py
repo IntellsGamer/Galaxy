@@ -225,7 +225,7 @@ When the user asks to run/execute a file:
 
 When the user asks to debug or fix code:
 1. Analyze the code for errors
-2. Provide corrected version using EDIT_FILE command
+2. Provide corrected version using EDIT_REGION command (you should first read the file's content to understand the problem) (you might have to read multiple files as they can be related to each other in different operations without COMPLETE_TASK tool, and then proceed to edit the problems)
 3. Explain what was wrong
 
 IMPORTANT - TOOL EXECUTION ORDER:
