@@ -2493,6 +2493,7 @@ Use CREATE_FILE commands for all files.`
         const sendBtn = document.getElementById('sendBtn')
         if (sendBtn) sendBtn.disabled = true
       
+        let toolResult = null
         try {
           // Check for special commands
           const commandResult = processSpecialCommands(text)
@@ -2559,7 +2560,7 @@ Use CREATE_FILE commands for all files.`
           }
       
           // Final processing for any file operations
-          const toolResult = await executeFileOperationsSequential(fullResponse)
+          toolResult = await executeFileOperationsSequential(fullResponse)
 
           // Ensure the final processed response is displayed
           const finalProcessed = processAIResponse(fullResponse)
@@ -2567,12 +2568,6 @@ Use CREATE_FILE commands for all files.`
 
           // Save assistant message to thread
           conversationManager.addMessage(state.currentThread, 'assistant', fullResponse)
-
-          if (toolResult && toolResult.didExecute && !toolResult.completeTask) {
-            await autoFollowupWithToolResults(toolResult, fullResponse)
-          } else if (toolResult && toolResult.completeTaskMessage) {
-            addSystemMessage(toolResult.completeTaskMessage)
-          }
 
           updateStatus('Ready', 'ready')
         } catch (error) {
@@ -2584,6 +2579,11 @@ Use CREATE_FILE commands for all files.`
           updateStatus('Error', 'error')
         } finally {
           finishProcessing()
+          if (toolResult && toolResult.didExecute && !toolResult.completeTask) {
+            await autoFollowupWithToolResults(toolResult, fullResponse)
+          } else if (toolResult && toolResult.completeTaskMessage) {
+            addSystemMessage(toolResult.completeTaskMessage)
+          }
         }
       }
       
@@ -2601,7 +2601,6 @@ Use CREATE_FILE commands for all files.`
 
       async function autoFollowupWithToolResults(toolResult, originalResponse) {
         if (!toolResult || !toolResult.results || toolResult.results.length === 0) return
-        if (state.isProcessing) return
         if (state.autoFollowupDepth >= 3) return
 
         state.autoFollowupDepth += 1
