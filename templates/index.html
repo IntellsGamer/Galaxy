@@ -1626,6 +1626,7 @@ Use CREATE_FILE commands for all files.`
         currentChat: [],
         currentThread: null,
         isProcessing: false,
+        autoFollowupDepth: 0,
         editor: null,
         serverUrl: window.location.origin,
         systemContext: `{{ system_context|safe }}` // Server-side injected context
@@ -2558,15 +2559,21 @@ Use CREATE_FILE commands for all files.`
           }
       
           // Final processing for any file operations
-          executeFileOperations(fullResponse)
-      
+          const toolResult = await executeFileOperationsSequential(fullResponse)
+
           // Ensure the final processed response is displayed
           const finalProcessed = processAIResponse(fullResponse)
           contentDiv.innerHTML = finalProcessed
-      
+
           // Save assistant message to thread
           conversationManager.addMessage(state.currentThread, 'assistant', fullResponse)
-      
+
+          if (toolResult && toolResult.didExecute && !toolResult.completeTask) {
+            await autoFollowupWithToolResults(toolResult, fullResponse)
+          } else if (toolResult && toolResult.completeTaskMessage) {
+            addSystemMessage(toolResult.completeTaskMessage)
+          }
+
           updateStatus('Ready', 'ready')
         } catch (error) {
           hideTypingIndicator()
@@ -2589,6 +2596,94 @@ Use CREATE_FILE commands for all files.`
         const modelSelect = document.getElementById('modelSelect')
         if (modelStatus && modelSelect) {
           modelStatus.textContent = modelSelect.value.split('/').pop()
+        }
+      }
+
+      async function autoFollowupWithToolResults(toolResult, originalResponse) {
+        if (!toolResult || !toolResult.results || toolResult.results.length === 0) return
+        if (state.isProcessing) return
+        if (state.autoFollowupDepth >= 3) return
+
+        state.autoFollowupDepth += 1
+        state.isProcessing = true
+        updateStatus('Processing tool results...', 'loading')
+        const sendBtn = document.getElementById('sendBtn')
+        if (sendBtn) sendBtn.disabled = true
+
+        try {
+          const context = buildContext()
+          const threadMessages = conversationManager.getMessages(state.currentThread)
+          let conversationHistory = ''
+          if (threadMessages.length > 0) {
+            const history = threadMessages.slice(0, -1)
+            history.forEach((msg) => {
+              conversationHistory += `${msg.role === 'user' ? 'User' : 'Assistant'}: ${msg.content}\n\n`
+            })
+          }
+
+          const resultsText = toolResult.results
+            .map((result) => JSON.stringify(result))
+            .join('\n')
+
+          const followupPrompt =
+            context +
+            '\n\n=== CONVERSATION HISTORY ===\n' +
+            conversationHistory +
+            '\n=== END HISTORY ===\n\n' +
+            'Tool Results (execute sequentially in order):\n' +
+            resultsText +
+            '\n\nRespond with any additional steps or confirmations. If everything is done, end with COMPLETE_TASK: <short completion message>.'
+
+          const modelSelect = document.getElementById('modelSelect')
+          const model = modelSelect ? modelSelect.value : 'moonshotai/kimi-k2.5'
+
+          showTypingIndicator()
+          const response = await puter.ai.chat(followupPrompt, {
+            model: model,
+            stream: true
+          })
+          hideTypingIndicator()
+
+          const msgDiv = createMessageElement('assistant', '')
+          const contentDiv = msgDiv.querySelector('.message-content')
+          const container = document.getElementById('chatMessages')
+          if (container && container.querySelector('.empty-state')) {
+            container.innerHTML = ''
+          }
+          container.appendChild(msgDiv)
+
+          let fullResponse = ''
+          for await (const part of response) {
+            if (part?.text) {
+              fullResponse += part.text
+              const processed = processAIResponse(fullResponse)
+              contentDiv.innerHTML = processed
+              if (container) {
+                container.scrollTop = container.scrollHeight
+              }
+            }
+          }
+
+          const toolResultFollowup = await executeFileOperationsSequential(fullResponse)
+          const finalProcessed = processAIResponse(fullResponse)
+          contentDiv.innerHTML = finalProcessed
+          conversationManager.addMessage(state.currentThread, 'assistant', fullResponse)
+
+          if (toolResultFollowup && toolResultFollowup.completeTaskMessage) {
+            addSystemMessage(toolResultFollowup.completeTaskMessage)
+          } else if (toolResultFollowup && toolResultFollowup.didExecute && !toolResultFollowup.completeTask) {
+            await autoFollowupWithToolResults(toolResultFollowup, fullResponse)
+          }
+        } catch (error) {
+          hideTypingIndicator()
+          addMessage('assistant', '❌ Error: ' + error.message)
+          if (state.currentThread) {
+            conversationManager.addMessage(state.currentThread, 'assistant', '❌ Error: ' + error.message)
+          }
+        } finally {
+          state.autoFollowupDepth = 0
+          finishProcessing()
+          updateStatus('Ready', 'ready')
         }
       }
 
@@ -2993,6 +3088,8 @@ Use CREATE_FILE commands for all files.`
           .replace(/EDIT_REGION:(\S+)/g, (match, name) => `[[FILEOP:region:${name}]]`)
           .replace(/READ_FILE:(\S+)/g, (match, name) => `[[FILEOP:read:${name}]]`)
           .replace(/DELETE_FILE:(\S+)/g, (match, name) => `[[FILEOP:delete:${name}]]`)
+          .replace(/RENAME_FILE:([^\n]+)/g, (match, payload) => `[[FILEOP:rename:${payload}]]`)
+          .replace(/COMPLETE_TASK:([^\n]+)/g, (match, payload) => `[[COMPLETE_TASK:${payload}]]`)
 
         temp = temp.replace(/@@INLINE(\d+)@@/g, (match, index) => inlineCodes[Number(index)] || match)
         temp = temp.replace(/@@CODEBLOCK(\d+)@@/g, (match, index) => codeBlocks[Number(index)] || match)
@@ -3000,14 +3097,17 @@ Use CREATE_FILE commands for all files.`
       }
 
       function renderFileOps(html) {
-        return html.replace(/\[\[FILEOP:(create|edit|region|read|delete):([^\]]+)\]\]/g, (match, action, name) => {
+        let out = html.replace(/\[\[FILEOP:(create|edit|region|read|delete|rename):([^\]]+)\]\]/g, (match, action, name) => {
           const safeName = escapeHtml(name)
           if (action === 'create') return '<span class="file-op create">[Creating: ' + safeName + ']</span>'
           if (action === 'edit') return '<span class="file-op edit">[Editing: ' + safeName + ']</span>'
           if (action === 'region') return '<span class="file-op edit">[Region Edit: ' + safeName + ']</span>'
           if (action === 'read') return '<span class="file-op read">[Reading: ' + safeName + ']</span>'
+          if (action === 'rename') return '<span class="file-op edit">[Renaming: ' + safeName + ']</span>'
           return '<span class="file-op delete">[Deleting: ' + safeName + ']</span>'
         })
+        out = out.replace(/\[\[COMPLETE_TASK:[^\]]+\]\]/g, '')
+        return out
       }
 
       function extractFootnotes(text) {
@@ -3070,142 +3170,200 @@ Use CREATE_FILE commands for all files.`
         return temp
       }
       
-      function executeFileOperations(response) {
-    // Extract CREATE_FILE operations
-    const createRegex = /CREATE_FILE:(\S+)\n?```(\w+)?\n([\s\S]*?)```/g
-    let match
-  
-    while ((match = createRegex.exec(response)) !== null) {
-      const filename = match[1]
-      const content = match[3]
-      const fileId = fs.createFile(filename, content.trim())
-      if (!fileId) {
-        addSystemMessage('File already exists: ' + filename)
-        continue
-      }
-      openFile(fileId)
+      async function executeFileOperationsSequential(response) {
+        const operations = parseOperations(response)
+        const results = []
+        let completeTask = false
+        let completeTaskMessage = ''
 
-      // Add confirmation message
-      addSystemMessage('✅ Created and opened ' + filename)
-    }
-  
-    // Extract EDIT_FILE operations
-    const editRegex = /EDIT_FILE:(\S+)\n?```(\w+)?\n([\s\S]*?)```/g
-    while ((match = editRegex.exec(response)) !== null) {
-      const filename = match[1]
-      const content = match[3]
-      const file = Object.values(state.files).find((f) => f.name === filename)
-
-      if (file) {
-        file.content = content.trim()
-        file.saved = false
-        file.lastModified = Date.now()
-        fs.saveToStorage()
-
-        if (state.activeTab === file.id && state.editor) {
-          state.editor.setValue(file.content)
-        }
-
-        addSystemMessage('✏️ Updated ' + filename)
-        renderFileTree()
-        renderTabs()
-      }
-    }
-
-    // Extract EDIT_REGION operations
-    const regionRegex = /EDIT_REGION:(\S+)\nSEARCH:\n```(?:\w+)?\n([\s\S]*?)```\nREPLACE:\n```(?:\w+)?\n([\s\S]*?)```/g
-    while ((match = regionRegex.exec(response)) !== null) {
-      const filename = match[1]
-      const searchContent = match[2].trim()
-      const replaceContent = match[3].trim()
-      const file = Object.values(state.files).find((f) => f.name === filename)
-
-      if (file) {
-        if (file.content.includes(searchContent)) {
-          file.content = file.content.replace(searchContent, replaceContent)
-          file.saved = false
-          file.lastModified = Date.now()
-          fs.saveToStorage()
-
-          if (state.activeTab === file.id && state.editor) {
-            state.editor.setValue(file.content)
+        for (const op of operations) {
+          if (op.type === 'complete_task') {
+            completeTask = true
+            completeTaskMessage = op.message || 'Task complete.'
+            results.push({ type: 'complete_task', message: completeTaskMessage })
+            break
           }
 
-          addSystemMessage('🎯 Region updated in ' + filename)
-          renderFileTree()
-          renderTabs()
-        } else {
-          addSystemMessage('❌ Could not find search region in ' + filename)
+          if (op.type === 'create') {
+            const fileId = fs.createFile(op.filename, op.content.trim())
+            if (!fileId) {
+              addSystemMessage('File already exists: ' + op.filename)
+              results.push({ type: 'create', filename: op.filename, status: 'exists' })
+              continue
+            }
+            openFile(fileId)
+            addSystemMessage('✅ Created and opened ' + op.filename)
+            results.push({ type: 'create', filename: op.filename, status: 'created' })
+            continue
+          }
+
+          if (op.type === 'edit') {
+            const file = Object.values(state.files).find((f) => f.name === op.filename)
+            if (!file) {
+              addSystemMessage('❌ File not found: ' + op.filename)
+              results.push({ type: 'edit', filename: op.filename, status: 'missing' })
+              continue
+            }
+            file.content = op.content.trim()
+            file.saved = false
+            file.lastModified = Date.now()
+            fs.saveToStorage()
+            if (state.activeTab === file.id && state.editor) {
+              state.editor.setValue(file.content)
+            }
+            addSystemMessage('✏️ Updated ' + op.filename)
+            renderFileTree()
+            renderTabs()
+            results.push({ type: 'edit', filename: op.filename, status: 'updated' })
+            continue
+          }
+
+          if (op.type === 'edit_region') {
+            const file = Object.values(state.files).find((f) => f.name === op.filename)
+            if (!file) {
+              addSystemMessage('❌ File not found: ' + op.filename)
+              results.push({ type: 'edit_region', filename: op.filename, status: 'missing' })
+              continue
+            }
+            if (!file.content.includes(op.search)) {
+              addSystemMessage('❌ Could not find search region in ' + op.filename)
+              results.push({ type: 'edit_region', filename: op.filename, status: 'not_found' })
+              continue
+            }
+            file.content = file.content.replace(op.search, op.replace)
+            file.saved = false
+            file.lastModified = Date.now()
+            fs.saveToStorage()
+            if (state.activeTab === file.id && state.editor) {
+              state.editor.setValue(file.content)
+            }
+            addSystemMessage('🎯 Region updated in ' + op.filename)
+            renderFileTree()
+            renderTabs()
+            results.push({ type: 'edit_region', filename: op.filename, status: 'updated' })
+            continue
+          }
+
+          if (op.type === 'rename') {
+            const file = Object.values(state.files).find((f) => f.name === op.from)
+            if (!file) {
+              addSystemMessage('❌ File not found: ' + op.from)
+              results.push({ type: 'rename', from: op.from, to: op.to, status: 'missing' })
+              continue
+            }
+            const exists = Object.values(state.files).find((f) => f.name === op.to)
+            if (exists) {
+              addSystemMessage('File already exists: ' + op.to)
+              results.push({ type: 'rename', from: op.from, to: op.to, status: 'exists' })
+              continue
+            }
+            fs.renameFile(file.id, op.to)
+            addSystemMessage('✏️ Renamed ' + op.from + ' to ' + op.to)
+            results.push({ type: 'rename', from: op.from, to: op.to, status: 'renamed' })
+            continue
+          }
+
+          if (op.type === 'read') {
+            const file = Object.values(state.files).find((f) => f.name === op.filename)
+            if (!file) {
+              addSystemMessage('❌ File not found: ' + op.filename)
+              results.push({ type: 'read', filename: op.filename, status: 'missing' })
+              continue
+            }
+            const content = file.content
+            addMessage('system', 'Content of ' + op.filename + ':\n```' + file.language + '\n' + content + '\n```')
+            results.push({ type: 'read', filename: op.filename, status: 'read', preview: content.slice(0, 8000) })
+            continue
+          }
+
+          if (op.type === 'delete') {
+            const file = Object.values(state.files).find((f) => f.name === op.filename)
+            if (!file) {
+              addSystemMessage('❌ File not found: ' + op.filename)
+              results.push({ type: 'delete', filename: op.filename, status: 'missing' })
+              continue
+            }
+            fs.deleteFile(file.id)
+            addSystemMessage('🗑️ Deleted ' + op.filename)
+            results.push({ type: 'delete', filename: op.filename, status: 'deleted' })
+            continue
+          }
+
+          if (op.type === 'run') {
+            const result = await runFileInternal(op.filename, true)
+            results.push({ type: 'run', filename: op.filename, status: result?.success ? 'success' : 'error', output: result?.output || '', error: result?.error || '' })
+            continue
+          }
+
+          if (op.type === 'lint') {
+            const result = await lintFileByName(op.filename)
+            results.push({ type: 'lint', filename: op.filename, status: result?.success ? 'success' : 'error', issues: result?.issues || [] })
+            continue
+          }
+        }
+
+        return {
+          didExecute: operations.length > 0,
+          results,
+          completeTask,
+          completeTaskMessage
         }
       }
-    }
 
-    // Extract READ_FILE operations
-    const readRegex = /READ_FILE:(\S+)/g
-    while ((match = readRegex.exec(response)) !== null) {
-      const filename = match[1]
-      const file = Object.values(state.files).find((f) => f.name === filename)
-      
-      if (file) {
-        const content = file.content
-        // Show file content in chat
-        addMessage('system', 'Content of ' + filename + ':\n```' + file.language + '\n' + content + '\n```')
-      } else {
-        addSystemMessage('❌ File not found: ' + filename)
+      function parseOperations(response) {
+        const ops = []
+        const pattern =
+          /CREATE_FILE:(\S+)\n?```(\w+)?\n([\s\S]*?)```|EDIT_FILE:(\S+)\n?```(\w+)?\n([\s\S]*?)```|EDIT_REGION:(\S+)\nSEARCH:\n```(?:\w+)?\n([\s\S]*?)```\nREPLACE:\n```(?:\w+)?\n([\s\S]*?)```|RENAME_FILE:([^\n]+)|READ_FILE:(\S+)|DELETE_FILE:(\S+)|RUN_FILE:(\S+)|LINT_FILE:(\S+)|COMPLETE_TASK:([^\n]+)/g
+
+        let match
+        while ((match = pattern.exec(response)) !== null) {
+          if (match[1]) {
+            ops.push({ type: 'create', filename: match[1], content: match[3] || '' })
+            continue
+          }
+          if (match[4]) {
+            ops.push({ type: 'edit', filename: match[4], content: match[6] || '' })
+            continue
+          }
+          if (match[7]) {
+            ops.push({ type: 'edit_region', filename: match[7], search: match[8] || '', replace: match[9] || '' })
+            continue
+          }
+          if (match[10]) {
+            const parts = match[10].split('->').map((part) => part.trim())
+            if (parts.length === 2) {
+              ops.push({ type: 'rename', from: parts[0], to: parts[1] })
+            }
+            continue
+          }
+          if (match[11]) {
+            ops.push({ type: 'read', filename: match[11] })
+            continue
+          }
+          if (match[12]) {
+            ops.push({ type: 'delete', filename: match[12] })
+            continue
+          }
+          if (match[13]) {
+            ops.push({ type: 'run', filename: match[13] })
+            continue
+          }
+          if (match[14]) {
+            ops.push({ type: 'lint', filename: match[14] })
+            continue
+          }
+          if (match[15]) {
+            ops.push({ type: 'complete_task', message: match[15].trim() })
+            continue
+          }
+        }
+        return ops
       }
-    }
-
-    // Extract DELETE_FILE operations
-    const deleteRegex = /DELETE_FILE:(\S+)/g
-    while ((match = deleteRegex.exec(response)) !== null) {
-      const filename = match[1]
-      const file = Object.values(state.files).find((f) => f.name === filename)
-
-      if (file) {
-        fs.deleteFile(file.id)
-        addSystemMessage('🗑️ Deleted ' + filename)
-      } else {
-        addSystemMessage('❌ File not found: ' + filename)
-      }
-    }
-
-    // Extract RUN_FILE operations
-    const runRegex = /RUN_FILE:(\S+)/g
-    while ((match = runRegex.exec(response)) !== null) {
-      const filename = match[1]
-      const file = Object.values(state.files).find((f) => f.name === filename)
-      
-      if (file) {
-        // Execute the file after a short delay to ensure everything is saved
-        setTimeout(() => {
-          runFile(filename)
-        }, 500)
-      } else {
-        addSystemMessage('❌ File not found: ' + filename)
-      }
-    }
-
-    // Extract LINT_FILE operations
-    const lintRegex = /LINT_FILE:(\S+)/g
-    while ((match = lintRegex.exec(response)) !== null) {
-      const filename = match[1]
-      const file = Object.values(state.files).find((f) => f.name === filename)
-      
-      if (file) {
-        // Lint the file after a short delay
-        setTimeout(() => {
-          lintFileByName(filename)
-        }, 500)
-      } else {
-        addSystemMessage('❌ File not found: ' + filename)
-      }
-    }
-}
 
 // Add this helper function for linting files by name
 async function lintFileByName(filename) {
     const file = Object.values(state.files).find((f) => f.name === filename)
-    if (!file) return
+    if (!file) return { success: false, issues: [], error: 'File not found' }
     
     updateStatus('Analyzing ' + filename + '...', 'loading')
     
@@ -3227,8 +3385,10 @@ async function lintFileByName(filename) {
         } else {
             addSystemMessage('Found ' + result.issues.length + ' issue(s) in ' + filename)
         }
+        return { success: true, issues: result.issues }
     } catch (error) {
         addSystemMessage('❌ Analysis failed for ' + filename)
+        return { success: false, issues: [], error: error.message }
     } finally {
         updateStatus('Ready')
     }
@@ -3569,45 +3729,51 @@ async function lintFileByName(filename) {
       }
       
       async function runFile(filename) {
-    const file = Object.values(state.files).find((f) => f.name === filename)
-    if (!file) {
-        addSystemMessage('File "' + filename + '" not found')
-        return
-    }
+        await runFileInternal(filename, true)
+      }
 
-    updateStatus('Running ' + filename + '...', 'loading')
+      async function runFileInternal(filename, showModal) {
+        const file = Object.values(state.files).find((f) => f.name === filename)
+        if (!file) {
+          addSystemMessage('File "' + filename + '" not found')
+          return { success: false, error: 'File not found', output: '' }
+        }
 
-    try {
-        const response = await fetch(state.serverUrl + '/api/execute', {
+        updateStatus('Running ' + filename + '...', 'loading')
+
+        try {
+          const response = await fetch(state.serverUrl + '/api/execute', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-                code: file.content,
-                language: file.language
+              code: file.content,
+              language: file.language
             })
-        })
+          })
 
-        const result = await response.json()
+          const result = await response.json()
 
-        // Show results in modal
-        showExecutionResultModal(filename, result)
-        
-        if (result.success) {
+          if (showModal) {
+            showExecutionResultModal(filename, result)
+          }
+          
+          if (result.success) {
             addSystemMessage('✓ ' + filename + ' executed successfully - View results in modal')
-        } else {
+          } else {
             addSystemMessage('❌ Error in ' + filename + ' - View details in modal')
+          }
+          return result
+        } catch (error) {
+          addSystemMessage('❌ Failed to execute ' + filename + ': ' + error.message)
+          const result = { success: false, error: error.message, output: '' }
+          if (showModal) {
+            showExecutionResultModal(filename, result)
+          }
+          return result
+        } finally {
+          updateStatus('Ready')
         }
-    } catch (error) {
-        addSystemMessage('❌ Failed to execute ' + filename + ': ' + error.message)
-        showExecutionResultModal(filename, {
-            success: false,
-            error: error.message,
-            output: ''
-        })
-    } finally {
-        updateStatus('Ready')
-    }
-}
+      }
 
 function showExecutionResultModal(filename, result) {
     // Create modal HTML
