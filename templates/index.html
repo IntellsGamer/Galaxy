@@ -307,6 +307,8 @@
         background: var(--bg);
         border-bottom: 1px solid var(--border);
         overflow-x: auto;
+        overflow-y: hidden;
+        white-space: nowrap;
         min-height: 35px;
       }
       
@@ -322,8 +324,16 @@
         color: var(--text-secondary);
         min-width: 120px;
         max-width: 200px;
+        flex: 0 0 auto;
         position: relative;
         transition: all 0.2s;
+      }
+
+      .tab-title {
+        max-width: 120px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
       }
       
       .tab:hover {
@@ -486,6 +496,18 @@
         border-left: 1px solid var(--border);
         display: flex;
         flex-direction: column;
+      }
+
+      .chat-panel.minimized {
+        width: 48px;
+      }
+
+      .chat-panel.minimized .chat-messages,
+      .chat-panel.minimized .chat-input-container,
+      .chat-panel.minimized .chat-toolbar,
+      .chat-panel.minimized #threadSidebar,
+      .chat-panel.minimized .chat-header h3 {
+        display: none;
       }
       
       .chat-header {
@@ -810,14 +832,21 @@
         justify-content: center;
         transition: all 0.2s;
       }
-      
+
       .send-btn:hover:not(:disabled) {
         background: var(--success-hover);
       }
-      
+
       .send-btn:disabled {
         opacity: 0.5;
         cursor: not-allowed;
+      }
+
+      .send-btn.stop {
+        background: var(--danger);
+        width: auto;
+        padding: 0 10px;
+        font-size: 12px;
       }
       
       /* Status Bar */
@@ -838,6 +867,10 @@
       .status-bar.loading {
         background: var(--warning);
         color: var(--bg);
+      }
+      .status-bar.stopped {
+        background: var(--accent);
+        color: white;
       }
       
       .status-left,
@@ -1518,6 +1551,7 @@ Use CREATE_FILE commands for all files.`
           <div class="chat-header">
             <h3>💬 Galaxy Assistant</h3>
             <div style="display: flex; gap: 8px;">
+              <button class="icon-btn-sm" onclick="toggleChatPanel()" title="Minimize Chat">▸</button>
               <button class="icon-btn-sm" onclick="newThread()" title="New Thread">➕</button>
               <button class="icon-btn-sm" onclick="clearChat()" title="Clear Chat">🗑️</button>
             </div>
@@ -1608,10 +1642,12 @@ Use CREATE_FILE commands for all files.`
 
     <!-- Context Menu -->
     <div class="context-menu" id="contextMenu">
-      <div class="context-item" onclick="contextAction('open')">📂 Open</div>
-      <div class="context-item" onclick="contextAction('rename')">✏️ Rename</div>
+      <div class="context-item" id="ctxOpenFile" onclick="contextAction('open')">📂 Open</div>
+      <div class="context-item" id="ctxRenameFile" onclick="contextAction('rename')">✏️ Rename</div>
       <div class="context-separator"></div>
-      <div class="context-item" onclick="contextAction('delete')" style="color: var(--danger)">🗑️ Delete</div>
+      <div class="context-item" id="ctxDeleteFile" onclick="contextAction('delete')" style="color: var(--danger)">🗑️ Delete</div>
+      <div class="context-item" id="ctxRenameFolder" onclick="contextAction('rename-folder')">✏️ Rename Folder</div>
+      <div class="context-item" id="ctxDeleteFolder" onclick="contextAction('delete-folder')" style="color: var(--danger)">🗑️ Delete Folder</div>
     </div>
 
     <script>
@@ -1627,6 +1663,9 @@ Use CREATE_FILE commands for all files.`
         currentThread: null,
         isProcessing: false,
         autoFollowupDepth: 0,
+        isGenerating: false,
+        stopRequested: false,
+        lastStopNotice: false,
         editor: null,
         serverUrl: window.location.origin,
         systemContext: `{{ system_context|safe }}` // Server-side injected context
@@ -2007,11 +2046,17 @@ Use CREATE_FILE commands for all files.`
                 state.files = payload.files || {}
                 state.folders = payload.folders || []
                 state.folderState = payload.folderState || {}
+                Object.values(state.files).forEach((file) => {
+                  file.synced = true
+                })
                 this.saveToStorage()
                 return
               }
               if (payload && Object.keys(payload).length > 0) {
                 state.files = payload
+                Object.values(state.files).forEach((file) => {
+                  file.synced = true
+                })
                 this.saveToStorage()
               }
             }
@@ -2031,7 +2076,16 @@ Use CREATE_FILE commands for all files.`
                 folderState: state.folderState
               })
             })
-            return response.ok
+            if (response.ok) {
+              Object.values(state.files).forEach((file) => {
+                file.synced = true
+                file.saved = true
+              })
+              renderFileTree()
+              renderTabs()
+              return true
+            }
+            return false
           } catch (error) {
             console.error('Failed to save to server:', error)
             return false
@@ -2056,6 +2110,7 @@ Use CREATE_FILE commands for all files.`
             content,
             language: this.detectLanguage(name),
             saved: true,
+            synced: false,
             lastModified: Date.now()
           }
           this.saveToStorage() // This will now sync to server
@@ -2067,6 +2122,7 @@ Use CREATE_FILE commands for all files.`
           if (state.files[id]) {
             state.files[id].content = content
             state.files[id].saved = false
+            state.files[id].synced = false
             state.files[id].lastModified = Date.now()
             this.saveToStorage() // This will now sync to server
             updateTabStatus(id, false)
@@ -2077,6 +2133,7 @@ Use CREATE_FILE commands for all files.`
           if (state.files[id]) {
             state.files[id].name = newName
             state.files[id].language = this.detectLanguage(newName)
+            state.files[id].synced = false
             this.saveToStorage()
             renderFileTree()
             renderTabs()
@@ -2129,6 +2186,9 @@ Use CREATE_FILE commands for all files.`
             const saved = localStorage.getItem('Galaxy_workspace_files')
             if (saved) {
               state.files = JSON.parse(saved)
+              Object.values(state.files).forEach((file) => {
+                if (typeof file.synced === 'undefined') file.synced = true
+              })
             }
             const savedFolders = localStorage.getItem('Galaxy_workspace_folders')
             if (savedFolders) {
@@ -2272,6 +2332,7 @@ Use CREATE_FILE commands for all files.`
           fs.saveToStorage()
           renderFileTree()
         }
+        item.oncontextmenu = (e) => showFolderContextMenu(e, node.path)
         container.appendChild(item)
 
         if (!isCollapsed) {
@@ -2298,7 +2359,7 @@ Use CREATE_FILE commands for all files.`
           '</span><span class="name">' +
           escapeHtml(file.name.split('/').pop()) +
           '</span>' +
-          (file.saved == false ? '<span style="color: var(--accent)">●</span>' : '')
+          (!file.synced ? '<span style="color: var(--accent)">●</span>' : '')
 
         item.onclick = () => openFile(file.id)
         item.oncontextmenu = (e) => showContextMenu(e, file.id)
@@ -2311,6 +2372,75 @@ Use CREATE_FILE commands for all files.`
         } else {
           renderFileNode(node, container)
         }
+      }
+
+      function renameFolderPath(oldPath, newPath) {
+        const trimmedOld = oldPath.replace(/\/+$/g, '')
+        const trimmedNew = newPath.replace(/\/+$/g, '')
+        if (!trimmedNew) return
+
+        if (state.folders.includes(trimmedNew)) {
+          alert('Folder already exists.')
+          return
+        }
+
+        state.folders = state.folders.map((folder) => {
+          if (folder === trimmedOld) return trimmedNew
+          if (folder.startsWith(trimmedOld + '/')) return trimmedNew + folder.slice(trimmedOld.length)
+          return folder
+        })
+
+        Object.values(state.files).forEach((file) => {
+          if (file.name.startsWith(trimmedOld + '/')) {
+            file.name = trimmedNew + file.name.slice(trimmedOld.length)
+            file.language = fs.detectLanguage(file.name)
+          }
+        })
+
+        const newFolderState = {}
+        Object.keys(state.folderState).forEach((key) => {
+          if (key === trimmedOld || key.startsWith(trimmedOld + '/')) {
+            newFolderState[trimmedNew + key.slice(trimmedOld.length)] = state.folderState[key]
+          } else {
+            newFolderState[key] = state.folderState[key]
+          }
+        })
+        state.folderState = newFolderState
+        if (state.selectedFolderPath && state.selectedFolderPath.startsWith(trimmedOld)) {
+          state.selectedFolderPath = trimmedNew + state.selectedFolderPath.slice(trimmedOld.length)
+        }
+
+        fs.saveToStorage()
+        renderFileTree()
+        renderTabs()
+      }
+
+      function deleteFolderPath(path) {
+        const trimmed = path.replace(/\/+$/g, '')
+        state.folders = state.folders.filter((folder) => {
+          return folder !== trimmed && !folder.startsWith(trimmed + '/')
+        })
+
+        const fileIds = Object.keys(state.files)
+        fileIds.forEach((id) => {
+          if (state.files[id].name.startsWith(trimmed + '/')) {
+            fs.deleteFile(id)
+          }
+        })
+
+        Object.keys(state.folderState).forEach((key) => {
+          if (key === trimmed || key.startsWith(trimmed + '/')) {
+            delete state.folderState[key]
+          }
+        })
+
+        if (state.selectedFolderPath && state.selectedFolderPath.startsWith(trimmed)) {
+          state.selectedFolderPath = ''
+        }
+
+        fs.saveToStorage()
+        renderFileTree()
+        renderTabs()
       }
 
       function renderFileTree() {
@@ -2385,9 +2515,14 @@ Use CREATE_FILE commands for all files.`
           const tab = document.createElement('div')
           tab.className = 'tab'
           if (tabId === state.activeTab) tab.classList.add('active')
-          if (!file.saved) tab.classList.add('unsaved')
+          if (!file.synced) tab.classList.add('unsaved')
       
-          tab.innerHTML = '<span>' + getFileIcon(file.name) + '</span><span>' + escapeHtml(file.name) + '</span><span class="tab-close" onclick="closeTabHandler(\'' + tabId + '\', event)">×</span>'
+          const tabLabel = file.name.split('/').pop()
+          tab.innerHTML = '<span>' + getFileIcon(file.name) + '</span><span class="tab-title" title="' + escapeHtml(file.name) + '">' + escapeHtml(tabLabel) + '</span><span class="tab-close" onclick="closeTabHandler(\'' + tabId + '\', event)">×</span>'
+          tab.oncontextmenu = (e) => {
+            e.preventDefault()
+            closeTabHandler(tabId, e)
+          }
       
           tab.onclick = () => switchToTab(tabId)
           bar.appendChild(tab)
@@ -2428,6 +2563,9 @@ Use CREATE_FILE commands for all files.`
         updateStatus('Editing ' + file.name)
         renderTabs()
         renderFileTree()
+        if (state.editor) {
+          state.editor.layout()
+        }
       }
       
       // This is the actual handler for closeTab
@@ -2464,9 +2602,9 @@ Use CREATE_FILE commands for all files.`
     const input = document.getElementById('chatInput')
     if (!input) return
     
-    const text = input.value.trim()
-    
-    if (!text || state.isProcessing) return
+        const text = input.value.trim()
+        
+        if (!text || state.isProcessing) return
     
     // Check if we're in image mode
     if (imageMode) {
@@ -2488,10 +2626,12 @@ Use CREATE_FILE commands for all files.`
         conversationManager.addMessage(state.currentThread, 'user', text)
         
         state.isProcessing = true
+        state.isGenerating = true
+        updateSendButton()
         updateStatus('Generating...', 'loading')
       
         const sendBtn = document.getElementById('sendBtn')
-        if (sendBtn) sendBtn.disabled = true
+        if (sendBtn && !state.isGenerating) sendBtn.disabled = true
       
         let toolResult = null
         let fullResponse = ''
@@ -2519,7 +2659,22 @@ Use CREATE_FILE commands for all files.`
             })
           }
           
-          const fullPrompt = context + '\n\n=== CONVERSATION HISTORY ===\n' + conversationHistory + '\n=== END HISTORY ===\n\nCurrent conversation:\nUser: ' + text + '\n\nAssistant:'
+          const stopNotice = state.lastStopNotice
+            ? '\nSYSTEM NOTICE: The previous generation was stopped by the user. Do not continue any unfinished tool actions. Wait for new instructions.\n'
+            : ''
+          if (state.lastStopNotice) {
+            state.lastStopNotice = false
+            state.stopRequested = false
+          }
+
+          const fullPrompt =
+            context +
+            stopNotice +
+            '\n\n=== CONVERSATION HISTORY ===\n' +
+            conversationHistory +
+            '\n=== END HISTORY ===\n\nCurrent conversation:\nUser: ' +
+            text +
+            '\n\nAssistant:'
       
           const modelSelect = document.getElementById('modelSelect')
           const model = modelSelect ? modelSelect.value : 'moonshotai/kimi-k2.5'
@@ -2544,6 +2699,7 @@ Use CREATE_FILE commands for all files.`
           container.appendChild(msgDiv)
       
           for await (const part of response) {
+            if (state.stopRequested) break
             if (part?.text) {
               fullResponse += part.text
       
@@ -2559,7 +2715,9 @@ Use CREATE_FILE commands for all files.`
           }
       
           // Final processing for any file operations
-          toolResult = await executeFileOperationsSequential(fullResponse)
+          if (!state.stopRequested) {
+            toolResult = await executeFileOperationsSequential(fullResponse)
+          }
 
           // Ensure the final processed response is displayed
           const finalProcessed = processAIResponse(fullResponse)
@@ -2577,8 +2735,9 @@ Use CREATE_FILE commands for all files.`
           }
           updateStatus('Error', 'error')
         } finally {
+          const wasStopped = state.stopRequested
           finishProcessing()
-          if (toolResult && toolResult.didExecute && !toolResult.completeTask) {
+          if (!wasStopped && toolResult && toolResult.didExecute && !toolResult.completeTask) {
             await autoFollowupWithToolResults(toolResult, fullResponse)
           } else if (toolResult && toolResult.completeTaskMessage) {
             addSystemMessage(toolResult.completeTaskMessage)
@@ -2588,20 +2747,95 @@ Use CREATE_FILE commands for all files.`
       
       function finishProcessing() {
         state.isProcessing = false
+        state.isGenerating = false
+        if (!state.stopRequested) state.stopRequested = false
         const sendBtn = document.getElementById('sendBtn')
         if (sendBtn) sendBtn.disabled = false
-      
+
         const modelStatus = document.getElementById('modelStatus')
         const modelSelect = document.getElementById('modelSelect')
         if (modelStatus && modelSelect) {
           modelStatus.textContent = modelSelect.value.split('/').pop()
         }
+        updateSendButton()
+      }
+
+      function updateSendButton() {
+        const sendBtn = document.getElementById('sendBtn')
+        if (!sendBtn) return
+        if (state.isGenerating) {
+          sendBtn.classList.add('stop')
+          sendBtn.title = 'Stop Generating'
+          sendBtn.innerHTML = '⏹'
+          sendBtn.onclick = stopGenerating
+        } else {
+          sendBtn.classList.remove('stop')
+          sendBtn.title = 'Send'
+          sendBtn.innerHTML =
+            '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">' +
+            '<line x1="22" y1="2" x2="11" y2="13"></line>' +
+            '<polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>' +
+            '</svg>'
+          sendBtn.onclick = sendMessage
+        }
+      }
+
+      function stopGenerating() {
+        if (!state.isGenerating) return
+        state.stopRequested = true
+        state.lastStopNotice = true
+        addWarningMessage('Generation stopped by user.')
+        updateStatus('Stopped', 'stopped')
+        state.isGenerating = false
+        updateSendButton()
+      }
+
+      function addWarningMessage(text) {
+        const container = document.getElementById('chatMessages')
+        if (!container) return
+        const div = document.createElement('div')
+        div.style.cssText = 'padding: 8px 16px; margin: 8px 0; background: var(--warning); color: var(--bg); border-radius: 6px; font-size: 12px; text-align: center;'
+        div.textContent = text
+        container.appendChild(div)
+        container.scrollTop = container.scrollHeight
+      }
+
+      function toggleChatPanel() {
+        const panel = document.querySelector('.chat-panel')
+        if (!panel) return
+        panel.classList.toggle('minimized')
+        if (state.editor) {
+          requestAnimationFrame(() => state.editor.layout())
+          setTimeout(() => state.editor.layout(), 120)
+        }
+      }
+
+      async function saveCurrentToServer() {
+        if (!state.activeTab) return
+        updateStatus('Saving current file...', 'loading')
+        const success = await fs.saveToServer()
+        if (success) {
+          addSystemMessage('✓ Saved to server')
+        } else {
+          addSystemMessage('❌ Save failed')
+        }
+        updateStatus('Ready')
+      }
+
+      async function saveAllToServer() {
+        updateStatus('Saving all files...', 'loading')
+        const success = await fs.saveToServer()
+        if (success) {
+          addSystemMessage('✓ All files saved to server')
+        } else {
+          addSystemMessage('❌ Save all failed')
+        }
+        updateStatus('Ready')
       }
 
       async function autoFollowupWithToolResults(toolResult, originalResponse) {
         if (!toolResult || !toolResult.results || toolResult.results.length === 0) return
-        if (state.autoFollowupDepth >= 3) return
-
+        if (state.stopRequested) return
         state.autoFollowupDepth += 1
         state.isProcessing = true
         updateStatus('Processing tool results...', 'loading')
@@ -2652,6 +2886,7 @@ Use CREATE_FILE commands for all files.`
 
           let fullResponse = ''
           for await (const part of response) {
+            if (state.stopRequested) break
             if (part?.text) {
               fullResponse += part.text
               const processed = processAIResponse(fullResponse)
@@ -2669,7 +2904,7 @@ Use CREATE_FILE commands for all files.`
 
           if (toolResultFollowup && toolResultFollowup.completeTaskMessage) {
             addSystemMessage(toolResultFollowup.completeTaskMessage)
-          } else if (toolResultFollowup && toolResultFollowup.didExecute && !toolResultFollowup.completeTask) {
+          } else if (toolResultFollowup && !toolResultFollowup.completeTask) {
             await autoFollowupWithToolResults(toolResultFollowup, fullResponse)
           }
         } catch (error) {
@@ -2679,7 +2914,6 @@ Use CREATE_FILE commands for all files.`
             conversationManager.addMessage(state.currentThread, 'assistant', '❌ Error: ' + error.message)
           }
         } finally {
-          state.autoFollowupDepth = 0
           finishProcessing()
           updateStatus('Ready', 'ready')
         }
@@ -3174,12 +3408,19 @@ Use CREATE_FILE commands for all files.`
         let completeTask = false
         let completeTaskMessage = ''
 
+        let fileOpCount = 0
         for (const op of operations) {
           if (op.type === 'complete_task') {
             completeTask = true
             completeTaskMessage = op.message || 'Task complete.'
             results.push({ type: 'complete_task', message: completeTaskMessage })
             break
+          }
+
+          const isFileMutating = ['create', 'edit', 'edit_region', 'rename', 'delete'].includes(op.type)
+          if (isFileMutating && fileOpCount >= 1) {
+            results.push({ type: op.type, status: 'skipped', reason: 'one_file_at_a_time' })
+            continue
           }
 
           if (op.type === 'create') {
@@ -3192,6 +3433,7 @@ Use CREATE_FILE commands for all files.`
             openFile(fileId)
             addSystemMessage('✅ Created and opened ' + op.filename)
             results.push({ type: 'create', filename: op.filename, status: 'created' })
+            fileOpCount += 1
             continue
           }
 
@@ -3213,6 +3455,7 @@ Use CREATE_FILE commands for all files.`
             renderFileTree()
             renderTabs()
             results.push({ type: 'edit', filename: op.filename, status: 'updated' })
+            fileOpCount += 1
             continue
           }
 
@@ -3239,6 +3482,7 @@ Use CREATE_FILE commands for all files.`
             renderFileTree()
             renderTabs()
             results.push({ type: 'edit_region', filename: op.filename, status: 'updated' })
+            fileOpCount += 1
             continue
           }
 
@@ -3258,6 +3502,7 @@ Use CREATE_FILE commands for all files.`
             fs.renameFile(file.id, op.to)
             addSystemMessage('✏️ Renamed ' + op.from + ' to ' + op.to)
             results.push({ type: 'rename', from: op.from, to: op.to, status: 'renamed' })
+            fileOpCount += 1
             continue
           }
 
@@ -3284,6 +3529,7 @@ Use CREATE_FILE commands for all files.`
             fs.deleteFile(file.id)
             addSystemMessage('🗑️ Deleted ' + op.filename)
             results.push({ type: 'delete', filename: op.filename, status: 'deleted' })
+            fileOpCount += 1
             continue
           }
 
@@ -3310,52 +3556,141 @@ Use CREATE_FILE commands for all files.`
 
       function parseOperations(response) {
         const ops = []
-        const pattern =
-          /CREATE_FILE:(\S+)\n?```(\w+)?\n([\s\S]*?)```|EDIT_FILE:(\S+)\n?```(\w+)?\n([\s\S]*?)```|EDIT_REGION:(\S+)\nSEARCH:\n```(?:\w+)?\n([\s\S]*?)```\nREPLACE:\n```(?:\w+)?\n([\s\S]*?)```|RENAME_FILE:([^\n]+)|READ_FILE:(\S+)|DELETE_FILE:(\S+)|RUN_FILE:(\S+)|LINT_FILE:(\S+)|COMPLETE_TASK:([^\n]+)/g
+        const lines = response.split('\n')
+        const pendingContentOps = []
 
-        let match
-        while ((match = pattern.exec(response)) !== null) {
-          if (match[1]) {
-            ops.push({ type: 'create', filename: match[1], content: match[3] || '' })
+        const pushContentToPending = (content) => {
+          if (pendingContentOps.length === 0) return false
+          const op = pendingContentOps.shift()
+          op.content = content
+          return true
+        }
+
+        let i = 0
+        while (i < lines.length) {
+          const line = lines[i].trim()
+
+          if (line.startsWith('```')) {
+            const block = parseCodeFence(lines, i)
+            if (pushContentToPending(block.content || '')) {
+              i = block.nextIndex
+              continue
+            }
+            i = block.nextIndex
             continue
           }
-          if (match[4]) {
-            ops.push({ type: 'edit', filename: match[4], content: match[6] || '' })
+
+          if (line.startsWith('CREATE_FILE:')) {
+            const filename = line.slice('CREATE_FILE:'.length).trim()
+            const op = { type: 'create', filename, content: '' }
+            ops.push(op)
+            pendingContentOps.push(op)
+            i += 1
             continue
           }
-          if (match[7]) {
-            ops.push({ type: 'edit_region', filename: match[7], search: match[8] || '', replace: match[9] || '' })
+
+          if (line.startsWith('EDIT_FILE:')) {
+            const filename = line.slice('EDIT_FILE:'.length).trim()
+            const op = { type: 'edit', filename, content: '' }
+            ops.push(op)
+            pendingContentOps.push(op)
+            i += 1
             continue
           }
-          if (match[10]) {
-            const parts = match[10].split('->').map((part) => part.trim())
+
+          if (line.startsWith('EDIT_REGION:')) {
+            const filename = line.slice('EDIT_REGION:'.length).trim()
+            const region = parseRegionBlock(lines, i + 1)
+            ops.push({ type: 'edit_region', filename, search: region.search, replace: region.replace })
+            i = region.nextIndex
+            continue
+          }
+
+          if (line.startsWith('RENAME_FILE:')) {
+            const payload = line.slice('RENAME_FILE:'.length).trim()
+            const parts = payload.split('->').map((part) => part.trim())
             if (parts.length === 2) {
               ops.push({ type: 'rename', from: parts[0], to: parts[1] })
             }
+            i += 1
             continue
           }
-          if (match[11]) {
-            ops.push({ type: 'read', filename: match[11] })
+
+          if (line.startsWith('READ_FILE:')) {
+            ops.push({ type: 'read', filename: line.slice('READ_FILE:'.length).trim() })
+            i += 1
             continue
           }
-          if (match[12]) {
-            ops.push({ type: 'delete', filename: match[12] })
+
+          if (line.startsWith('DELETE_FILE:')) {
+            ops.push({ type: 'delete', filename: line.slice('DELETE_FILE:'.length).trim() })
+            i += 1
             continue
           }
-          if (match[13]) {
-            ops.push({ type: 'run', filename: match[13] })
+
+          if (line.startsWith('RUN_FILE:')) {
+            ops.push({ type: 'run', filename: line.slice('RUN_FILE:'.length).trim() })
+            i += 1
             continue
           }
-          if (match[14]) {
-            ops.push({ type: 'lint', filename: match[14] })
+
+          if (line.startsWith('LINT_FILE:')) {
+            ops.push({ type: 'lint', filename: line.slice('LINT_FILE:'.length).trim() })
+            i += 1
             continue
           }
-          if (match[15]) {
-            ops.push({ type: 'complete_task', message: match[15].trim() })
+
+          if (line.startsWith('COMPLETE_TASK:')) {
+            ops.push({ type: 'complete_task', message: line.slice('COMPLETE_TASK:'.length).trim() })
+            i += 1
             continue
           }
+
+          i += 1
         }
+
         return ops
+      }
+
+      function parseCodeFence(lines, startIndex) {
+        let i = startIndex
+        if (!lines[i].trim().startsWith('```')) return { content: '', nextIndex: i + 1 }
+        i += 1
+        const contentLines = []
+        while (i < lines.length && !lines[i].trim().startsWith('```')) {
+          contentLines.push(lines[i])
+          i += 1
+        }
+        if (i < lines.length && lines[i].trim().startsWith('```')) i += 1
+        return { content: contentLines.join('\n'), nextIndex: i }
+      }
+
+      function parseRegionBlock(lines, startIndex) {
+        let i = startIndex
+        let search = ''
+        let replace = ''
+        while (i < lines.length && lines[i].trim() !== 'SEARCH:') i += 1
+        if (i < lines.length) {
+          const searchBlock = parseNextCodeBlock(lines, i + 1)
+          search = searchBlock.content || ''
+          i = searchBlock.nextIndex
+        }
+        while (i < lines.length && lines[i].trim() !== 'REPLACE:') i += 1
+        if (i < lines.length) {
+          const replaceBlock = parseNextCodeBlock(lines, i + 1)
+          replace = replaceBlock.content || ''
+          i = replaceBlock.nextIndex
+        }
+        return { search, replace, nextIndex: i }
+      }
+
+      function parseNextCodeBlock(lines, startIndex) {
+        let i = startIndex
+        while (i < lines.length && !lines[i].trim().startsWith('```')) {
+          i += 1
+        }
+        if (i >= lines.length) return { content: '', nextIndex: i }
+        return parseCodeFence(lines, i)
       }
 
 // Add this helper function for linting files by name
@@ -3587,11 +3922,50 @@ async function lintFileByName(filename) {
         e.preventDefault()
         const menu = document.getElementById('contextMenu')
         if (!menu) return
-      
+
         menu.style.left = e.pageX + 'px'
         menu.style.top = e.pageY + 'px'
         menu.classList.add('show')
         menu.dataset.fileId = fileId
+        menu.dataset.folderPath = ''
+        menu.dataset.contextType = 'file'
+        updateContextMenuFor('file')
+      }
+
+      function showFolderContextMenu(e, folderPath) {
+        e.preventDefault()
+        const menu = document.getElementById('contextMenu')
+        if (!menu) return
+
+        menu.style.left = e.pageX + 'px'
+        menu.style.top = e.pageY + 'px'
+        menu.classList.add('show')
+        menu.dataset.fileId = ''
+        menu.dataset.folderPath = folderPath
+        menu.dataset.contextType = 'folder'
+        updateContextMenuFor('folder')
+      }
+
+      function updateContextMenuFor(type) {
+        const openItem = document.getElementById('ctxOpenFile')
+        const renameItem = document.getElementById('ctxRenameFile')
+        const deleteItem = document.getElementById('ctxDeleteFile')
+        const renameFolderItem = document.getElementById('ctxRenameFolder')
+        const deleteFolderItem = document.getElementById('ctxDeleteFolder')
+
+        if (type === 'folder') {
+          if (openItem) openItem.style.display = 'none'
+          if (renameItem) renameItem.style.display = 'none'
+          if (deleteItem) deleteItem.style.display = 'none'
+          if (renameFolderItem) renameFolderItem.style.display = 'flex'
+          if (deleteFolderItem) deleteFolderItem.style.display = 'flex'
+        } else {
+          if (openItem) openItem.style.display = 'flex'
+          if (renameItem) renameItem.style.display = 'flex'
+          if (deleteItem) deleteItem.style.display = 'flex'
+          if (renameFolderItem) renameFolderItem.style.display = 'none'
+          if (deleteFolderItem) deleteFolderItem.style.display = 'none'
+        }
       }
       
       function contextActionHandler(action) {
@@ -3599,8 +3973,9 @@ async function lintFileByName(filename) {
         if (!menu) return
       
         const fileId = menu.dataset.fileId
+        const folderPath = menu.dataset.folderPath
         menu.classList.remove('show')
-      
+
         if (action === 'open') openFile(fileId)
         else if (action === 'rename') {
           const file = state.files[fileId]
@@ -3610,6 +3985,16 @@ async function lintFileByName(filename) {
           }
         } else if (action === 'delete') {
           if (confirm('Delete this file?')) fs.deleteFile(fileId)
+        } else if (action === 'rename-folder') {
+          if (!folderPath) return
+          const newName = prompt('New folder name:', folderPath)
+          if (!newName) return
+          renameFolderPath(folderPath, newName.trim())
+        } else if (action === 'delete-folder') {
+          if (!folderPath) return
+          if (confirm('Delete this folder and all files inside?')) {
+            deleteFolderPath(folderPath)
+          }
         }
       }
       
@@ -3994,6 +4379,7 @@ function downloadExecutionOutput(filename, output) {
         console.log('Initial files from server:', Object.keys(state.files).length)
       
         renderFileTree()
+        updateSendButton()
         updateStatus('Ready - Server Context Active')
       }
       
@@ -4016,6 +4402,19 @@ function downloadExecutionOutput(filename, output) {
             e.preventDefault()
             closeTabHandler(state.activeTab)
           }
+          if (e.key === 's' && e.shiftKey) {
+            e.preventDefault()
+            saveAllToServer()
+          } else if (e.key === 's') {
+            e.preventDefault()
+            saveCurrentToServer()
+          }
+        }
+      })
+      
+      window.addEventListener('resize', () => {
+        if (state.editor) {
+          state.editor.layout()
         }
       })
 
