@@ -1,4 +1,4 @@
-from flask import Flask, render_template, request, jsonify
+from flask import Flask, render_template, request, jsonify, Response, stream_with_context
 import json
 import re
 from datetime import datetime
@@ -7,6 +7,8 @@ import io
 import sys
 import traceback
 import uuid
+from urllib.request import Request, urlopen
+from urllib.error import HTTPError, URLError
 
 app = Flask(__name__, template_folder='templates')
 app.secret_key = 'your-secret-key-change-this-in-production'
@@ -17,6 +19,24 @@ if not os.path.exists('data'):
 
 # Thread/conversation storage file
 THREADS_FILE = 'data/threads.json'
+
+def load_env_file(path='.env'):
+    if not os.path.exists(path):
+        return
+    try:
+        with open(path, 'r') as f:
+            for line in f:
+                line = line.strip()
+                if not line or line.startswith('#') or '=' not in line:
+                    continue
+                key, value = line.split('=', 1)
+                os.environ.setdefault(key.strip(), value.strip())
+    except Exception:
+        pass
+
+load_env_file()
+
+OPENROUTER_API_KEY = os.getenv('OPENROUTER_API_KEY', '')
 
 @app.route('/')
 def index():
@@ -648,6 +668,113 @@ def format_code():
             return jsonify({'success': True, 'formatted': '\n'.join(formatted_lines)})
     
     return jsonify({'success': True, 'formatted': code})
+
+@app.route('/api/openrouter/status', methods=['GET'])
+def openrouter_status():
+    """Check OpenRouter API key availability"""
+    if not OPENROUTER_API_KEY:
+        return jsonify({'ok': False, 'message': 'OpenRouter API key not found in .env'})
+    try:
+        req = Request(
+            'https://openrouter.ai/api/v1/models',
+            headers={'Authorization': f'Bearer {OPENROUTER_API_KEY}'}
+        )
+        with urlopen(req, timeout=10) as res:
+            if res.status == 200:
+                return jsonify({'ok': True})
+        return jsonify({'ok': False, 'message': 'OpenRouter key check failed'})
+    except HTTPError as e:
+        return jsonify({'ok': False, 'message': f'OpenRouter error: {e.code}'})
+    except URLError:
+        return jsonify({'ok': False, 'message': 'OpenRouter unreachable'})
+
+@app.route('/api/openrouter/chat', methods=['POST'])
+def openrouter_chat():
+    """Proxy chat to OpenRouter"""
+    if not OPENROUTER_API_KEY:
+        return jsonify({'success': False, 'error': 'OpenRouter API key not found in .env'}), 400
+    data = request.json or {}
+    prompt = data.get('prompt', '')
+    model = data.get('model', 'openai/gpt-4o-mini')
+
+    payload = {
+        'model': model,
+        'messages': [{'role': 'user', 'content': prompt}]
+    }
+    try:
+        req = Request(
+            'https://openrouter.ai/api/v1/chat/completions',
+            data=json.dumps(payload).encode('utf-8'),
+            headers={
+                'Authorization': f'Bearer {OPENROUTER_API_KEY}',
+                'Content-Type': 'application/json'
+            }
+        )
+        with urlopen(req, timeout=30) as res:
+            body = res.read().decode('utf-8')
+            result = json.loads(body)
+            text = ''
+            choices = result.get('choices', [])
+            if choices:
+                text = choices[0].get('message', {}).get('content', '')
+            return jsonify({'success': True, 'text': text})
+    except HTTPError as e:
+        try:
+            err_body = e.read().decode('utf-8')
+            return jsonify({'success': False, 'error': err_body}), 400
+        except Exception:
+            return jsonify({'success': False, 'error': f'OpenRouter error: {e.code}'}), 400
+    except URLError:
+        return jsonify({'success': False, 'error': 'OpenRouter unreachable'}), 400
+
+@app.route('/api/openrouter/chat/stream', methods=['POST'])
+def openrouter_chat_stream():
+    """Stream chat completions from OpenRouter as plain text chunks"""
+    if not OPENROUTER_API_KEY:
+        return jsonify({'success': False, 'error': 'OpenRouter API key not found in .env'}), 400
+    data = request.json or {}
+    prompt = data.get('prompt', '')
+    model = data.get('model', 'openai/gpt-4o-mini')
+
+    payload = {
+        'model': model,
+        'messages': [{'role': 'user', 'content': prompt}],
+        'stream': True
+    }
+
+    def generate():
+        try:
+            req = Request(
+                'https://openrouter.ai/api/v1/chat/completions',
+                data=json.dumps(payload).encode('utf-8'),
+                headers={
+                    'Authorization': f'Bearer {OPENROUTER_API_KEY}',
+                    'Content-Type': 'application/json'
+                }
+            )
+            with urlopen(req, timeout=60) as res:
+                for raw in res:
+                    try:
+                        line = raw.decode('utf-8').strip()
+                    except Exception:
+                        continue
+                    if not line or not line.startswith('data:'):
+                        continue
+                    data_str = line[len('data:'):].strip()
+                    if data_str == '[DONE]':
+                        break
+                    try:
+                        parsed = json.loads(data_str)
+                        delta = parsed.get('choices', [{}])[0].get('delta', {})
+                        content = delta.get('content', '')
+                        if content:
+                            yield content
+                    except Exception:
+                        continue
+        except Exception:
+            return
+
+    return Response(stream_with_context(generate()), mimetype='text/plain')
 
 @app.route('/api/lint', methods=['POST'])
 def lint_code():

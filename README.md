@@ -41,6 +41,16 @@
    - Load an example project
    - Initialize from a template
 
+### Optional: OpenRouter Provider
+You can use OpenRouter for chat instead of Puter.
+
+1. Copy the example env file:
+   - `cp .env.example .env`
+2. Set your key:
+   - `OPENROUTER_API_KEY=your_key_here`
+3. Restart the server.
+4. In Settings, switch Provider to OpenRouter and set a model (e.g. `openai/gpt-4o-mini`).
+
 ### AI Assistance Examples
 ```javascript
 // Ask the AI to: "Create a React component for a login form"

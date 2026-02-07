@@ -848,6 +848,10 @@
         padding: 0 10px;
         font-size: 12px;
       }
+
+      .send-btn.stop:hover:not(:disabled) {
+        background: var(--danger);
+      }
       
       /* Status Bar */
       .status-bar {
@@ -1482,21 +1486,38 @@ Use CREATE_FILE commands for all files.`
 
         <!-- Sidebar -->
         <div class="sidebar" id="sidebar">
-          <div class="sidebar-header">
-            <span>EXPLORER</span>
-            <div class="sidebar-actions">
-              <button class="icon-btn-sm" onclick="newFile()" title="New File">📄</button>
-              <button class="icon-btn-sm" onclick="newFolder()" title="New Folder">📁</button>
-              <button class="icon-btn-sm" onclick="expandAllFolders()" title="Expand All">+</button>
-              <button class="icon-btn-sm" onclick="collapseAllFolders()" title="Collapse All">-</button>
-              <button class="icon-btn-sm" onclick="refreshExplorer()" title="Refresh">🔄</button>
+          <div id="explorerPanel">
+            <div class="sidebar-header">
+              <span>EXPLORER</span>
+              <div class="sidebar-actions">
+                <button class="icon-btn-sm" onclick="newFile()" title="New File">📄</button>
+                <button class="icon-btn-sm" onclick="newFolder()" title="New Folder">📁</button>
+                <button class="icon-btn-sm" onclick="expandAllFolders()" title="Expand All">+</button>
+                <button class="icon-btn-sm" onclick="collapseAllFolders()" title="Collapse All">-</button>
+                <button class="icon-btn-sm" onclick="refreshExplorer()" title="Refresh">🔄</button>
+              </div>
+            </div>
+            <div class="explorer-search">
+              <input type="text" id="fileSearchInput" placeholder="Filter files..." oninput="renderFileTree()">
+            </div>
+            <div class="file-tree" id="fileTree">
+              <!-- Files populated by JS -->
             </div>
           </div>
-          <div class="explorer-search">
-            <input type="text" id="fileSearchInput" placeholder="Filter files..." oninput="renderFileTree()">
-          </div>
-          <div class="file-tree" id="fileTree">
-            <!-- Files populated by JS -->
+          <div id="settingsPanel" style="display: none;">
+            <div class="sidebar-header">
+              <span>SETTINGS</span>
+            </div>
+            <div style="padding: 12px 16px;">
+              <div style="font-size: 12px; color: var(--text-secondary); margin-bottom: 8px;">AI Provider</div>
+              <select id="providerSelect" class="model-select" style="width: 100%; margin-bottom: 12px;">
+                <option value="puter">Puter</option>
+                <option value="openrouter">OpenRouter</option>
+              </select>
+              <div style="font-size: 12px; color: var(--text-secondary); margin-bottom: 8px;">OpenRouter Model</div>
+              <input id="openrouterModelInput" type="text" class="param-input" placeholder="e.g. openai/gpt-4o-mini">
+              <div id="openrouterStatus" style="margin-top: 10px; font-size: 12px;"></div>
+            </div>
           </div>
         </div>
 
@@ -1666,6 +1687,8 @@ Use CREATE_FILE commands for all files.`
         isGenerating: false,
         stopRequested: false,
         lastStopNotice: false,
+        provider: 'puter',
+        openrouterModel: 'openai/gpt-4o-mini',
         editor: null,
         serverUrl: window.location.origin,
         systemContext: `{{ system_context|safe }}` // Server-side injected context
@@ -2604,7 +2627,8 @@ Use CREATE_FILE commands for all files.`
     
         const text = input.value.trim()
         
-        if (!text || state.isProcessing) return
+    if (!text || state.isProcessing) return
+    state.stopRequested = false
     
     // Check if we're in image mode
     if (imageMode) {
@@ -2631,7 +2655,7 @@ Use CREATE_FILE commands for all files.`
         updateStatus('Generating...', 'loading')
       
         const sendBtn = document.getElementById('sendBtn')
-        if (sendBtn && !state.isGenerating) sendBtn.disabled = true
+        if (sendBtn) sendBtn.disabled = false
       
         let toolResult = null
         let fullResponse = ''
@@ -2667,7 +2691,7 @@ Use CREATE_FILE commands for all files.`
             state.stopRequested = false
           }
 
-          const fullPrompt =
+        const fullPrompt =
             context +
             stopNotice +
             '\n\n=== CONVERSATION HISTORY ===\n' +
@@ -2682,10 +2706,10 @@ Use CREATE_FILE commands for all files.`
           // Show typing indicator
           showTypingIndicator()
       
-          const response = await puter.ai.chat(fullPrompt, {
-            model: model,
-            stream: true
-          })
+          const response =
+            state.provider === 'openrouter'
+              ? streamFromOpenRouter(fullPrompt)
+              : await puter.ai.chat(fullPrompt, { model: model, stream: true })
       
           hideTypingIndicator()
       
@@ -2700,8 +2724,9 @@ Use CREATE_FILE commands for all files.`
       
           for await (const part of response) {
             if (state.stopRequested) break
-            if (part?.text) {
-              fullResponse += part.text
+            const chunk = part?.text || part
+            if (chunk) {
+              fullResponse += chunk
       
               // Update the message content with processed response
               const processed = processAIResponse(fullResponse)
@@ -2777,6 +2802,94 @@ Use CREATE_FILE commands for all files.`
             '<polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>' +
             '</svg>'
           sendBtn.onclick = sendMessage
+        }
+      }
+
+      function loadProviderSettings() {
+        const storedProvider = localStorage.getItem('Galaxy_provider')
+        const storedModel = localStorage.getItem('Galaxy_openrouter_model')
+        if (storedProvider) state.provider = storedProvider
+        if (storedModel) state.openrouterModel = storedModel
+
+        const providerSelect = document.getElementById('providerSelect')
+        if (providerSelect) providerSelect.value = state.provider
+
+        const modelInput = document.getElementById('openrouterModelInput')
+        if (modelInput) modelInput.value = state.openrouterModel
+      }
+
+      function saveProviderSettings() {
+        localStorage.setItem('Galaxy_provider', state.provider)
+        localStorage.setItem('Galaxy_openrouter_model', state.openrouterModel)
+      }
+
+      async function checkOpenRouterStatus() {
+        const statusEl = document.getElementById('openrouterStatus')
+        if (!statusEl) return
+        statusEl.textContent = 'Checking OpenRouter key...'
+        statusEl.style.color = 'var(--text-secondary)'
+        try {
+          const response = await fetch(state.serverUrl + '/api/openrouter/status')
+          const result = await response.json()
+          if (result.ok) {
+            statusEl.textContent = 'OpenRouter key is valid.'
+            statusEl.style.color = 'var(--success)'
+            return true
+          }
+          statusEl.textContent = result.message || 'OpenRouter key is missing or invalid.'
+          statusEl.style.color = 'var(--danger)'
+          return false
+        } catch (error) {
+          statusEl.textContent = 'Unable to validate OpenRouter key.'
+          statusEl.style.color = 'var(--danger)'
+          return false
+        }
+      }
+
+      async function setProvider(provider) {
+        state.provider = provider
+        saveProviderSettings()
+        if (provider === 'openrouter') {
+          await checkOpenRouterStatus()
+        } else {
+          const statusEl = document.getElementById('openrouterStatus')
+          if (statusEl) {
+            statusEl.textContent = ''
+          }
+        }
+      }
+
+      async function* streamFromOpenRouter(prompt) {
+        const statusOk = await checkOpenRouterStatus()
+        if (!statusOk) {
+          addWarningMessage('OpenRouter key is missing or invalid. Please update .env and restart.')
+          return
+        }
+
+        const response = await fetch(state.serverUrl + '/api/openrouter/chat/stream', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            prompt,
+            model: state.openrouterModel || 'openai/gpt-4o-mini'
+          })
+        })
+
+        if (!response.ok || !response.body) {
+          addWarningMessage('OpenRouter request failed.')
+          return
+        }
+
+        const reader = response.body.getReader()
+        const decoder = new TextDecoder('utf-8')
+        let done = false
+        while (!done) {
+          const result = await reader.read()
+          done = result.done
+          const chunk = decoder.decode(result.value || new Uint8Array(), { stream: !done })
+          if (chunk) {
+            yield chunk
+          }
         }
       }
 
@@ -2870,10 +2983,10 @@ Use CREATE_FILE commands for all files.`
           const model = modelSelect ? modelSelect.value : 'moonshotai/kimi-k2.5'
 
           showTypingIndicator()
-          const response = await puter.ai.chat(followupPrompt, {
-            model: model,
-            stream: true
-          })
+          const response =
+            state.provider === 'openrouter'
+              ? streamFromOpenRouter(followupPrompt)
+              : await puter.ai.chat(followupPrompt, { model: model, stream: true })
           hideTypingIndicator()
 
           const msgDiv = createMessageElement('assistant', '')
@@ -3822,6 +3935,15 @@ async function lintFileByName(filename) {
           document.querySelectorAll('.activity-item').forEach((i) => i.classList.remove('active'))
           e.target.classList.add('active')
         }
+        const explorerPanel = document.getElementById('explorerPanel')
+        const settingsPanel = document.getElementById('settingsPanel')
+        if (view === 'settings') {
+          if (explorerPanel) explorerPanel.style.display = 'none'
+          if (settingsPanel) settingsPanel.style.display = 'block'
+        } else {
+          if (explorerPanel) explorerPanel.style.display = 'block'
+          if (settingsPanel) settingsPanel.style.display = 'none'
+        }
       }
       
       function newFileHandler() {
@@ -4369,18 +4491,38 @@ function downloadExecutionOutput(filename, output) {
       
       // Initialize
       window.onload = () => {
-        if (typeof puter === 'undefined') {
+        loadProviderSettings()
+
+        const providerSelect = document.getElementById('providerSelect')
+        if (providerSelect) {
+          providerSelect.addEventListener('change', async (e) => {
+            await setProvider(e.target.value)
+          })
+        }
+
+        const modelInput = document.getElementById('openrouterModelInput')
+        if (modelInput) {
+          modelInput.addEventListener('change', (e) => {
+            state.openrouterModel = e.target.value.trim() || state.openrouterModel
+            saveProviderSettings()
+          })
+        }
+
+        if (state.provider === 'puter' && typeof puter === 'undefined') {
           updateStatus('Error: Puter.js not loaded', 'error')
           return
         }
-      
+
         // Log server context for debugging
         console.log('Server context loaded:', state.systemContext ? 'Yes' : 'No')
         console.log('Initial files from server:', Object.keys(state.files).length)
-      
+
         renderFileTree()
         updateSendButton()
         updateStatus('Ready - Server Context Active')
+        if (state.provider === 'openrouter') {
+          checkOpenRouterStatus()
+        }
       }
       
       // Close context menu on click elsewhere
