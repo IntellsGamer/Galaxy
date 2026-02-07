@@ -2974,32 +2974,29 @@ Use CREATE_FILE commands for all files.`
         return out.join('\n')
       }
 
-      function injectFileOps(text) {
-        return text
-          .replace(/CREATE_FILE:(\S+)/g, (match, name) => {
-            return '<span class="file-op create">[Creating: ' + escapeHtml(name) + ']</span>'
-          })
-          .replace(/EDIT_FILE:(\S+)/g, (match, name) => {
-            return '<span class="file-op edit">[Editing: ' + escapeHtml(name) + ']</span>'
-          })
-          .replace(/EDIT_REGION:(\S+)/g, (match, name) => {
-            return '<span class="file-op edit">[Region Edit: ' + escapeHtml(name) + ']</span>'
-          })
-          .replace(/READ_FILE:(\S+)/g, (match, name) => {
-            return '<span class="file-op read">[Reading: ' + escapeHtml(name) + ']</span>'
-          })
-          .replace(/DELETE_FILE:(\S+)/g, (match, name) => {
-            return '<span class="file-op delete">[Deleting: ' + escapeHtml(name) + ']</span>'
-          })
-      }
-
       function injectFileOpsTokens(text) {
-        return text
+        const codeBlocks = []
+        let temp = text.replace(/```[\s\S]*?```/g, (match) => {
+          const index = codeBlocks.push(match) - 1
+          return `@@CODEBLOCK${index}@@`
+        })
+
+        const inlineCodes = []
+        temp = temp.replace(/`[^`]*`/g, (match) => {
+          const index = inlineCodes.push(match) - 1
+          return `@@INLINE${index}@@`
+        })
+
+        temp = temp
           .replace(/CREATE_FILE:(\S+)/g, (match, name) => `[[FILEOP:create:${name}]]`)
           .replace(/EDIT_FILE:(\S+)/g, (match, name) => `[[FILEOP:edit:${name}]]`)
           .replace(/EDIT_REGION:(\S+)/g, (match, name) => `[[FILEOP:region:${name}]]`)
           .replace(/READ_FILE:(\S+)/g, (match, name) => `[[FILEOP:read:${name}]]`)
           .replace(/DELETE_FILE:(\S+)/g, (match, name) => `[[FILEOP:delete:${name}]]`)
+
+        temp = temp.replace(/@@INLINE(\d+)@@/g, (match, index) => inlineCodes[Number(index)] || match)
+        temp = temp.replace(/@@CODEBLOCK(\d+)@@/g, (match, index) => codeBlocks[Number(index)] || match)
+        return temp
       }
 
       function renderFileOps(html) {
