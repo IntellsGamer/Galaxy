@@ -1694,7 +1694,7 @@ Use CREATE_FILE commands for all files.`
         openrouterModel: 'openai/gpt-4o-mini',
         editor: null,
         serverUrl: window.location.origin,
-        systemContext: `{{ system_context|safe }}` // Server-side injected context
+        systemContext: {{ system_context_json|safe }} // Server-side injected context
       }
       
       // ========== CONVERSATION THREAD MANAGEMENT ==========
@@ -3196,7 +3196,7 @@ Use CREATE_FILE commands for all files.`
       }
 
       function buildContext() {
-        let context = `{{ system_context|safe }}`
+        let context = {{ system_context_json|safe }}
 
         // Update with current files state (in case files changed client-side)
         const files = Object.values(state.files)
@@ -3535,6 +3535,7 @@ Use CREATE_FILE commands for all files.`
       }
 
       function injectFileOpsTokens(text) {
+        const encodeFileOpPayload = (value) => encodeURIComponent(value).replace(/_/g, '%5F')
         const codeBlocks = []
         let temp = text.replace(/```[\s\S]*?```/g, (match) => {
           const index = codeBlocks.push(match) - 1
@@ -3548,13 +3549,13 @@ Use CREATE_FILE commands for all files.`
         })
 
         temp = temp
-          .replace(/CREATE_FILE:(\S+)/g, (match, name) => `[[FILEOP:create:${name}]]`)
-          .replace(/EDIT_FILE:(\S+)/g, (match, name) => `[[FILEOP:edit:${name}]]`)
-          .replace(/EDIT_REGION:(\S+)/g, (match, name) => `[[FILEOP:region:${name}]]`)
-          .replace(/READ_FILE:(\S+)/g, (match, name) => `[[FILEOP:read:${name}]]`)
-          .replace(/DELETE_FILE:(\S+)/g, (match, name) => `[[FILEOP:delete:${name}]]`)
-          .replace(/RENAME_FILE:([^\n]+)/g, (match, payload) => `[[FILEOP:rename:${payload}]]`)
-          .replace(/COMPLETE_TASK:([^\n]+)/g, (match, payload) => `[[COMPLETE_TASK:${payload}]]`)
+          .replace(/CREATE_FILE:(\S+)/g, (match, name) => `[[FILEOP:create:${encodeFileOpPayload(name)}]]`)
+          .replace(/EDIT_FILE:(\S+)/g, (match, name) => `[[FILEOP:edit:${encodeFileOpPayload(name)}]]`)
+          .replace(/EDIT_REGION:(\S+)/g, (match, name) => `[[FILEOP:region:${encodeFileOpPayload(name)}]]`)
+          .replace(/READ_FILE:(\S+)/g, (match, name) => `[[FILEOP:read:${encodeFileOpPayload(name)}]]`)
+          .replace(/DELETE_FILE:(\S+)/g, (match, name) => `[[FILEOP:delete:${encodeFileOpPayload(name)}]]`)
+          .replace(/RENAME_FILE:([^\n]+)/g, (match, payload) => `[[FILEOP:rename:${encodeFileOpPayload(payload)}]]`)
+          .replace(/COMPLETE_TASK:([^\n]+)/g, (match, payload) => `[[COMPLETE_TASK:${encodeFileOpPayload(payload)}]]`)
 
         temp = temp.replace(/@@INLINE(\d+)@@/g, (match, index) => inlineCodes[Number(index)] || match)
         temp = temp.replace(/@@CODEBLOCK(\d+)@@/g, (match, index) => codeBlocks[Number(index)] || match)
@@ -3563,7 +3564,8 @@ Use CREATE_FILE commands for all files.`
 
       function renderFileOps(html) {
         let out = html.replace(/\[\[FILEOP:(create|edit|region|read|delete|rename):([^\]]+)\]\]/g, (match, action, name) => {
-          const safeName = escapeHtml(name)
+          const decodedName = decodeURIComponent(name)
+          const safeName = escapeHtml(decodedName)
           if (action === 'create') return '<span class="file-op create">[Creating: ' + safeName + ']</span>'
           if (action === 'edit') return '<span class="file-op edit">[Editing: ' + safeName + ']</span>'
           if (action === 'region') return '<span class="file-op edit">[Region Edit: ' + safeName + ']</span>'
@@ -3628,8 +3630,15 @@ Use CREATE_FILE commands for all files.`
           return `@@INLINE${index}@@`
         })
 
+        const fileOps = []
+        temp = temp.replace(/\[\[(?:FILEOP|COMPLETE_TASK):[^\]]+\]\]/g, (match) => {
+          const index = fileOps.push(match) - 1
+          return `@@FILEOP${index}@@`
+        })
+
         temp = temp.replace(/__(.+?)__/g, '<u>$1</u>')
 
+        temp = temp.replace(/@@FILEOP(\d+)@@/g, (match, index) => fileOps[Number(index)] || match)
         temp = temp.replace(/@@INLINE(\d+)@@/g, (match, index) => inlineCodes[Number(index)] || match)
         temp = temp.replace(/@@CODEBLOCK(\d+)@@/g, (match, index) => codeBlocks[Number(index)] || match)
         return temp

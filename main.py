@@ -77,9 +77,7 @@ def index():
     
     # Build the system context/prompt server-side
     system_context = build_system_context(files_list, folders_data)
-
-    # Escape for JavaScript - replace backticks with a placeholder
-    escaped_context = system_context.replace('`', '<BACKTICK PLACEHOLDER - the character, not what you see>')
+    system_context_json = json.dumps(system_context)
 
     # Render template
     try:
@@ -97,7 +95,7 @@ def index():
                         initial_folder_state=json.dumps(folder_state),
                         server_url=request.host_url,
                         version='1.1.0',
-                        system_context=escaped_context,
+                        system_context_json=system_context_json,
                         provider=provider_pref)
 
 
