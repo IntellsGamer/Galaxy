@@ -1,0 +1,425 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Galaxy Workspace · Login</title>
+
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/JetBrains.Mono.css') }}">
+
+  <style>
+    :root {
+      --bg:        #0b1017;
+      --surface:    #12191f;
+      --surface-2:  #161e27;
+      --border:     #22303f;
+      --text:       #e8eef7;
+      --text-sub:   #9cafc7;
+      --text-dim:   #71859e;
+      --accent:     #2b6cff;      /* blue-forward primary */
+      --accent-h:   #6aa6ff;
+      --success:    #1fb851;
+      --glow-soft:  0 0 1px rgba(43,108,255,0.28), 0 0 14px rgba(43,108,255,0.12);
+      --glow-btn:   0 3px 16px rgba(43,108,255,0.26);
+    }
+
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      min-height: 100dvh;
+      background:
+        radial-gradient(ellipse 100% 80% at 8% 10%, rgba(43,108,255,0.18), transparent 65%),
+        radial-gradient(ellipse 120% 90% at 92% 15%, rgba(90,187,255,0.10), transparent 65%),
+        var(--bg);
+      color: var(--text);
+      font-family: 'Space Grotesk', system-ui, sans-serif;
+      line-height: 1.56;
+      padding: 20px;
+      display: grid;
+      place-items: center;
+    }
+
+    body::before {
+      content: "";
+      position: fixed;
+      inset: 0;
+      background: repeating-linear-gradient(
+        135deg,
+        rgba(160,160,255,0.012) 0,
+        rgba(160,160,255,0.012) 1px,
+        transparent 1px,
+        transparent 20px
+      );
+      pointer-events: none;
+      mix-blend-mode: soft-light;
+      z-index: -1;
+    }
+
+    .login-container {
+      width:  min(1080px, 100%);
+      display: grid;
+      grid-template-columns: minmax(360px, 420px) 1fr;
+      gap: 32px;
+      align-items: start;
+    }
+
+    .card {
+      background: linear-gradient(150deg, var(--surface) 0%, var(--surface-2) 100%);
+      border: 1px solid var(--border);
+      border-radius: 20px;
+      padding: 32px 28px;
+      box-shadow: 0 14px 44px rgba(0,0,0,0.42), inset 0 1px 0 rgba(255,255,255,0.025);
+      position: relative;
+      overflow: hidden;
+      /* backdrop-filter removed → performance win */
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      margin-bottom: 24px;
+    }
+
+    .brand-icon {
+      width: 54px;
+      height: 54px;
+      border-radius: 16px;
+      background: conic-gradient(from 120deg, #2b6cff, #5bb0ff, #38bdf8, #6aa6ff, #2b6cff);
+      display: grid;
+      place-items: center;
+      font-size: 26px;
+      font-weight: 700;
+      color: white;
+      box-shadow: var(--glow-soft);
+      /* animation removed → huge performance gain */
+    }
+
+    h1 {
+      font-size: 26px;
+      font-weight: 600;
+      letter-spacing: -0.25px;
+    }
+
+    .subtitle {
+      color: var(--text-sub);
+      font-size: 14px;
+      margin-top: 4px;
+    }
+
+    .form-group {
+      margin-bottom: 20px;
+    }
+
+    label {
+      display: block;
+      font-size: 11.5px;
+      font-weight: 500;
+      color: var(--text-dim);
+      letter-spacing: 0.07em;
+      text-transform: uppercase;
+      margin-bottom: 8px;
+    }
+
+    input {
+      width: 100%;
+      background: rgba(18,23,31,0.82);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 13px 16px;
+      color: var(--text);
+      font-size: 15px;
+      transition: border-color 0.2s ease, box-shadow 0.2s ease, background 0.2s ease;
+    }
+
+    input:focus {
+      outline: none;
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px rgba(43,108,255,0.22);
+      background: rgba(18,23,31,0.94);
+    }
+
+    .actions {
+      display: flex;
+      gap: 14px;
+      margin-top: 20px;
+    }
+
+button {
+  position: relative;
+  overflow: hidden;
+  padding: 14px 24px;
+  font-size: 14px;
+  font-weight: 600;
+
+  font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+
+  border-radius: 14px;
+  cursor: pointer;
+  transition:
+    transform 0.18s cubic-bezier(0.34, 1.56, 0.64, 1),
+    box-shadow 0.24s ease,
+    background 0.3s ease,
+    filter 0.3s ease;
+}
+
+
+    button:active {
+      transform: translateY(1px);
+    }
+
+    button::before {
+      content: "";
+      position: absolute;
+      inset: 0;
+      background: linear-gradient(100deg, transparent 35%, rgba(255,255,255,0.12), transparent 65%);
+      transform: translateX(-140%);
+      transition: transform 0.8s ease-out, opacity 0.3s ease;
+      pointer-events: none;
+      opacity: 0.7;
+    }
+
+    button:hover::before {
+      transform: translateX(140%);
+    }
+
+    .btn-primary {
+      background: linear-gradient(138deg, var(--accent) 0%, #1f4ad6 100%);
+      color: white;
+      border: none;
+      box-shadow: var(--glow-btn);
+      isolation: isolate;
+      background-size: 140% 140%;
+      background-position: 0% 50%;
+    }
+
+    .btn-primary:hover {
+      background: linear-gradient(135deg, #2b6cff 0%, #2a56e6 55%, #1f4ad6 100%);
+      background-position: 100% 50%;
+      box-shadow:
+        0 10px 22px rgba(20,45,120,0.35),
+        inset 0 0 0 1px rgba(96,160,255,0.28);
+      transform: translateY(-2px);
+    }
+
+    .btn-primary:focus-visible {
+      outline: none;
+      box-shadow: 0 0 0 3px rgba(43,108,255,0.36);
+    }
+
+    .btn-primary::after {
+      content: "";
+      position: absolute;
+      inset: 0;
+      background:
+        radial-gradient(120% 140% at 20% 0%, rgba(255,255,255,0.10), transparent 55%),
+        radial-gradient(120% 140% at 80% 100%, rgba(43,108,255,0.22), transparent 60%);
+      opacity: 0.35;
+      mix-blend-mode: screen;
+      transition: opacity 0.3s ease;
+      z-index: 0;
+      filter: blur(4px);
+    }
+
+    .btn-primary:hover::after { opacity: 0.45; }
+    .btn-primary::before { opacity: 0; }
+
+    .btn-primary:active::after {
+      opacity: 0.7;
+      transform: scale(0.99);
+    }
+
+    .btn-primary.loading {
+      pointer-events: none;
+      color: transparent;
+      animation: btn-pulse 1.6s ease-in-out infinite;
+      filter: saturate(1.1);
+    }
+
+    .btn-primary.loading::after {
+      content: "";
+      position: absolute;
+      inset: 0;
+      background: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='22' height='22' viewBox='0 0 24 24' fill='none' stroke='%23f8fbff' stroke-width='3'><path d='M21 12a9 9 0 1 1-6.219-8.56'/></svg>") center / 22px no-repeat;
+      animation: spin 1s linear infinite;
+      filter: drop-shadow(0 0 4px rgba(0,0,0,0.55));
+    }
+
+    @keyframes spin { to { transform: rotate(360deg); } }
+    @keyframes btn-pulse {
+      0%   { box-shadow: 0 4px 16px rgba(43,108,255,0.25); }
+      50%  { box-shadow: 0 8px 26px rgba(43,108,255,0.45); }
+      100% { box-shadow: 0 4px 16px rgba(43,108,255,0.25); }
+    }
+
+    .btn-ghost {
+      background: transparent;
+      border: 1px solid var(--border);
+      color: var(--text-sub);
+    }
+
+    .btn-ghost:hover {
+      border-color: var(--accent);
+      color: var(--accent-h);
+      background: rgba(43,108,255,0.06);
+      box-shadow: 0 5px 16px rgba(43,108,255,0.18);
+      transform: translateY(-1.5px);
+    }
+
+    .btn-ghost:focus-visible {
+      box-shadow: 0 0 0 3px rgba(43,108,255,0.26);
+    }
+
+    button:disabled {
+      opacity: 0.4;
+      cursor: not-allowed;
+      transform: none;
+      box-shadow: none;
+    }
+
+    .terminal {
+      font-family: 'JetBrains Mono', monospace;
+      background: #0c1118;
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 20px;
+      font-size: 13.5px;
+      line-height: 1.65;
+      color: #d2dbe9;
+      box-shadow: inset 0 1px 2px rgba(0,0,0,0.35);
+    }
+
+    .prompt { color: #6fdb8a; font-weight: 500; }
+    .terminal .dim { color: #64778f; }
+
+    .info-panel {
+      padding: 24px 28px;
+      font-size: 14px;
+      color: var(--text-sub);
+      line-height: 1.6;
+    }
+
+    .info-panel strong { color: var(--text); }
+
+    .error {
+      margin: 16px 0 8px;
+      color: #f87171;
+      font-size: 13px;
+    }
+
+    .status-bar {
+      margin-top: 24px;
+      padding-top: 16px;
+      border-top: 1px solid var(--border);
+      display: flex;
+      justify-content: space-between;
+      font-size: 12.5px;
+      color: var(--text-dim);
+    }
+
+    .pulse-dot {
+      display: inline-block;
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--success);
+      box-shadow: 0 0 0 0 rgba(31,184,81,0.55);
+      animation: pulse-ring 2.6s infinite;
+      margin-right: 8px;
+    }
+
+    @keyframes pulse-ring {
+      0%   { box-shadow: 0 0 0 0 rgba(31,184,81,0.55); }
+      70%  { box-shadow: 0 0 0 9px rgba(31,184,81,0); }
+      100% { box-shadow: 0 0 0 0 rgba(31,184,81,0); }
+    }
+
+    @media (max-width: 900px) {
+      .login-container {
+        grid-template-columns: 1fr;
+        gap: 28px;
+      }
+      .card, .info-panel { padding: 28px 24px; }
+    }
+  </style>
+</head>
+<body>
+
+<div class="login-container">
+
+  <div class="card">
+    <div class="brand">
+      <div class="brand-icon">G</div>
+      <div>
+        <h1>Galaxy Workspace</h1>
+        <div class="subtitle">Secure access to your private cloud</div>
+      </div>
+    </div>
+
+    <form method="POST" action="/">
+      <div class="form-group">
+        <label for="username">Username</label>
+        <input id="username" name="username" type="text" placeholder="user" required autocomplete="username"/>
+      </div>
+
+      <div class="form-group">
+        <label for="password">Passphrase</label>
+        <input id="password" name="password" type="password" placeholder="••••••••••••••••" required autocomplete="current-password"/>
+      </div>
+
+      <div class="actions">
+        <button type="submit" class="btn-primary" id="submit-btn">Unlock Session</button>
+        <button type="reset"  class="btn-ghost">Clear</button>
+      </div>
+    </form>
+
+    {% if error %}
+      <div class="error">{{ error }}</div>
+    {% endif %}
+
+    <div class="status-bar">
+      <span>Server → {{ server_name or "local" }}</span>
+      <span><span class="pulse-dot"></span>Session Guard active</span>
+    </div>
+  </div>
+
+  <div style="display: flex; flex-direction: column; gap: 24px;">
+    <div class="card terminal">
+      <div><span class="prompt">galaxy</span>@workspace:~$ <span class="dim">systemctl status guard</span></div>
+      <div>● guard.service - Galaxy Session Guard</div>
+      <div>   Loaded: loaded</div>
+      <div>   Active: <span style="color:#6fdb8a">active (running)</span> since boot</div>
+      <div>   Waiting for authentication token…</div>
+      <br/>
+      <div class="dim">Tip: use your configured credentials</div>
+    </div>
+
+    <div class="card info-panel">
+      <strong>New to Galaxy Workspace?</strong><br>
+      Credentials must be configured in your environment before the server becomes accessible.<br><br>
+      <span style="opacity:0.75">Default public routes remain blocked until first successful sign-in.</span>
+    </div>
+  </div>
+
+</div>
+
+<script>
+  // Minimal submit → loading state (you can expand later with real fetch)
+  document.querySelector('form').addEventListener('submit', e => {
+    const btn = document.getElementById('submit-btn');
+    btn.classList.add('loading');
+    // In real app → remove 'loading' class after response
+    // For demo we just leave it (refresh page to reset)
+  });
+</script>
+
+</body>
+</html>

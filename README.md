@@ -34,8 +34,16 @@
 ## 🎯 Getting Started
 
 ### Quick Access
-1. **Open Galaxy Workspace** in your browser
-2. Choose your starting point:
+1. Workspare environment configuration:
+- Copy the example env file:
+   - `cp .env.example .env`
+- Set your key values:
+   - `OPENROUTER_API_KEY="your_key_here"` (optional)
+   - `LOGIN_USER=username`
+   - `LOGIN_PASS=password`
+
+2. **Open Galaxy Workspace** in your browser
+3. Choose your starting point:
    - Create a new file with AI assistance
    - Start a chat with the AI assistant
    - Load an example project
@@ -44,9 +52,7 @@
 ### Optional: OpenRouter Provider
 You can use OpenRouter for chat instead of Puter.
 
-1. Copy the example env file:
-   - `cp .env.example .env`
-2. Set your key:
+1. Set your API key in the .env file:
    - `OPENROUTER_API_KEY=your_key_here`
 3. Restart the server.
 4. In Settings, switch Provider to OpenRouter and set a model (e.g. `openai/gpt-4o-mini`).

@@ -1,5 +1,7 @@
-from flask import Flask, render_template, request, jsonify, Response, stream_with_context
+from flask import Flask, request, jsonify, Response, stream_with_context, session, redirect, make_response, send_from_directory
+from flask import render_template as flask_render_template
 import json
+import urllib
 import re
 from datetime import datetime
 import os
@@ -19,6 +21,7 @@ if not os.path.exists('data'):
 
 # Thread/conversation storage file
 THREADS_FILE = 'data/threads.json'
+LOGIN_ATTEMPTS_FILE = 'data/login_attempts.json'
 
 def load_env_file(path='.env'):
     if not os.path.exists(path):
@@ -37,9 +40,223 @@ def load_env_file(path='.env'):
 load_env_file()
 
 OPENROUTER_API_KEY = os.getenv('OPENROUTER_API_KEY', '')
+LOGIN_USER = os.getenv('LOGIN_USER', 'admin')
+LOGIN_PASS = os.getenv('LOGIN_PASS', 'admin123')
 
-@app.route('/')
+MAX_LOGIN_ATTEMPTS = 5
+BLOCK_HOURS = 2
+
+def get_client_ip():
+    forwarded = request.headers.get('X-Forwarded-For', '')
+    if forwarded:
+        return forwarded.split(',')[0].strip()
+    return request.remote_addr or 'unknown'
+
+def load_login_attempts():
+    try:
+        if os.path.exists(LOGIN_ATTEMPTS_FILE):
+            with open(LOGIN_ATTEMPTS_FILE, 'r') as f:
+                return json.load(f)
+    except Exception:
+        pass
+    return {}
+
+def save_login_attempts(attempts):
+    try:
+        os.makedirs('data', exist_ok=True)
+        with open(LOGIN_ATTEMPTS_FILE, 'w') as f:
+            json.dump(attempts, f, indent=2)
+    except Exception:
+        pass
+
+def is_ip_blocked(attempts, ip):
+    entry = attempts.get(ip, {})
+    blocked_until = entry.get('blocked_until', 0)
+    now = int(datetime.now().timestamp())
+    if blocked_until and now < blocked_until:
+        return True, blocked_until
+    if blocked_until and now >= blocked_until:
+        entry['blocked_until'] = 0
+        entry['count'] = 0
+        attempts[ip] = entry
+        save_login_attempts(attempts)
+    return False, 0
+
+def record_failed_attempt(attempts, ip):
+    entry = attempts.get(ip, {'count': 0, 'blocked_until': 0})
+    entry['count'] = int(entry.get('count', 0)) + 1
+    if entry['count'] >= MAX_LOGIN_ATTEMPTS:
+        block_until = int(datetime.now().timestamp()) + (BLOCK_HOURS * 3600)
+        entry['blocked_until'] = block_until
+    attempts[ip] = entry
+    save_login_attempts(attempts)
+    return attempts[ip]
+
+def reset_attempts(attempts, ip):
+    if ip in attempts:
+        attempts[ip]['count'] = 0
+        attempts[ip]['blocked_until'] = 0
+        save_login_attempts(attempts)
+
+def login_required(fn):
+    def wrapper(*args, **kwargs):
+        if not session.get('authenticated'):
+            return redirect('/login')
+        return fn(*args, **kwargs)
+    wrapper.__name__ = fn.__name__
+    return wrapper
+
+def render_template(template_name, remove_comments=True, **context):
+    rendered_content = flask_render_template(template_name, **context)
+    
+    if not remove_comments:
+        return rendered_content
+    
+    cleaned_content = rendered_content
+    
+    # ONLY convert <a href> links, leave everything else alone
+    def convert_anchor_links(match):
+        full_match = match.group(0)
+        before_attr = match.group(1)
+        original_url = match.group(2)
+        after_attr = match.group(3)
+        
+        # Skip if it's a local URL or fragment
+        if (original_url.startswith('#') or 
+            original_url.startswith('mailto:') or 
+            original_url.startswith('tel:') or
+            original_url.startswith('javascript:')):
+            return full_match
+        
+        # if is_local_url(original_url):
+        #     return full_match
+        
+        if any(original_url.lower().endswith(ext) for ext in ['.js', '.css', '.jpg', '.png', '.gif', '.ico', '.woff', '.ttf']):
+            return full_match
+        
+        encoded_url = urllib.parse.quote(original_url, safe='')
+        return f'{before_attr}href="/ref?link={encoded_url}"{after_attr}'
+    
+    anchor_pattern = r'(<a[^>]*\s+)href=["\'](https?://[^"\']+)["\']([^>]*>)'
+    cleaned_content = re.sub(anchor_pattern, convert_anchor_links, cleaned_content, flags=re.IGNORECASE)
+    
+    def remove_js_comments(match):
+        script_tag = match.group(1)
+        content = match.group(2)
+        
+        lines = content.split('\n')
+        cleaned_lines = []
+        for line in lines:
+            in_string = False
+            string_char = None
+            i = 0
+            while i < len(line):
+                char = line[i]
+                if char in ('"', "'", '`') and (i == 0 or line[i-1] != '\\'):
+                    if not in_string:
+                        in_string = True
+                        string_char = char
+                    elif string_char == char:
+                        in_string = False
+                        string_char = None
+                elif not in_string and char == '/' and i+1 < len(line) and line[i+1] == '/':
+                    line = line[:i]
+                    break
+                i += 1
+            cleaned_lines.append(line)
+        
+        content = '\n'.join(cleaned_lines)
+        content = re.sub(r'/\*[\s\S]*?\*/', '', content)
+        
+        return f'{script_tag}{content}</script>'
+    
+    def remove_css_comments(match):
+        style_tag = match.group(1)
+        content = match.group(2)
+        content = re.sub(r'/\*[\s\S]*?\*/', '', content)
+        return f'{style_tag}{content}</style>'
+    
+    # Process script tags
+    cleaned_content = re.sub(
+        r'(<script[^>]*>)(.*?)</script>',
+        remove_js_comments,
+        cleaned_content,
+        flags=re.DOTALL | re.IGNORECASE
+    )
+    
+    # Process style tags
+    cleaned_content = re.sub(
+        r'(<style[^>]*>)(.*?)</style>',
+        remove_css_comments,
+        cleaned_content,
+        flags=re.DOTALL | re.IGNORECASE
+    )
+    
+    # Remove HTML comments
+    cleaned_content = re.sub(r'<!--(?!\[if\s)[\s\S]*?-->', '', cleaned_content)
+    cleaned_content = re.sub(r'{#[\s\S]*?#}', '', cleaned_content)
+
+    return "<!-- THIS WEBSITE IS PROTECTED BY NOCOMMENTS -->\n" + cleaned_content
+
+@app.route('/static/<path:filename>')
+def serve_static(filename):
+    """
+    Serve files from the 'static' folder with aggressive caching
+    and proper conditional GET (ETag + If-None-Match / If-Modified-Since) support.
+    """
+    # Let Flask send the file (handles MIME types, range requests, etc.)
+    response = send_from_directory(
+        'static',                    # your static folder
+        filename,
+        conditional=True             # ← this is the magic: adds ETag + handles 304 automatically
+    )
+
+    # ── Aggressive caching headers (same style as your login page) ───────
+    response.headers['Cache-Control'] = 'public, max-age=3600, immutable'
+    response.headers['Pragma'] = 'cache'           # mostly for very old browsers
+    response.headers['Expires'] = ''               # let Cache-Control take over
+
+    # Optional: you can force-add or override ETag if you want custom behavior
+    # (but conditional=True already adds a strong ETag based on file content + mtime)
+    # response.add_etag()   # usually not needed when using conditional=True
+
+    return response
+
+@app.route('/', methods=['GET', 'POST'])
+# @login_required
 def index():
+    if not session.get('authenticated'):
+        # ── Unauthenticated → show login page ─────────────────────────────
+        ip = get_client_ip()
+        attempts = load_login_attempts()
+        blocked, _ = is_ip_blocked(attempts, ip)
+
+        if blocked:
+            resp = make_response(render_template('login.html', 
+                                               error='Too many failed attempts. Try again later.'))
+        elif request.method == 'POST':
+            username = (request.form.get('username') or '').strip()
+            password = (request.form.get('password') or '').strip()
+
+            if username == LOGIN_USER and password == LOGIN_PASS:
+                session['authenticated'] = True
+                reset_attempts(attempts, ip)
+                return redirect('/')  # redirect after login → will now show workspace
+
+            record_failed_attempt(attempts, ip)
+            resp = make_response(render_template('login.html', 
+                                               error='Invalid username or password.'))
+        else:
+            # GET → fresh login page
+            resp = make_response(render_template('login.html'))
+
+        # ── Allow caching ONLY for the login page ──────────────────────────
+        resp.headers['Cache-Control'] = 'public, max-age=3600, immutable'   # cache 1 hour
+        resp.headers['Pragma'] = 'cache'                                    # for older browsers
+        resp.headers['Expires'] = ''                                        # let Cache-Control rule
+        resp.add_etag()
+
+        return resp.make_conditional(request)
     # Get initial files from storage if they exist
     files_data = {}
     folders_data = []
@@ -97,6 +314,35 @@ def index():
                         version='1.1.0',
                         system_context_json=system_context_json,
                         provider=provider_pref)
+
+# @app.route('/login', methods=['GET', 'POST'])
+# def login():
+#     if session.get('authenticated'):
+#             return redirect('/')
+#     ip = get_client_ip()
+#     attempts = load_login_attempts()
+#     blocked, blocked_until = is_ip_blocked(attempts, ip)
+#     if blocked:
+#         return render_template('login.html', error='Too many failed attempts. Try again later.')
+
+#     if request.method == 'POST':
+#         username = (request.form.get('username') or '').strip()
+#         password = (request.form.get('password') or '').strip()
+
+#         if username == LOGIN_USER and password == LOGIN_PASS:
+#             session['authenticated'] = True
+#             reset_attempts(attempts, ip)
+#             return redirect('/')
+
+#         record_failed_attempt(attempts, ip)
+#         return render_template('login.html', error='Invalid username or password.')
+
+#     return render_template('login.html')
+
+@app.route('/logout')
+def logout():
+    session.clear()
+    return redirect('/login')
 
 
 def build_system_context(files_list, folders_list):
