@@ -4,6 +4,11 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Galaxy + VS Code Workspace</title>
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <meta name="theme-color" content="#0d1117" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <link rel="apple-touch-icon" href="/static/icons/icon-192.png" />
     {% if provider == 'puter' %}
     <script src="https://js.puter.com/v2/"></script>
     {% endif %}
@@ -5153,6 +5158,13 @@ document.addEventListener('DOMContentLoaded', function() {
         modelSelect.addEventListener('change', updateModelStatus);
     }
 });
+    </script>
+    <script>
+      if ('serviceWorker' in navigator) {
+        window.addEventListener('load', () => {
+          navigator.serviceWorker.register('/sw.js').catch(() => {})
+        })
+      }
     </script>
   </body>
 </html>

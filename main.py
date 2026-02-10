@@ -222,6 +222,19 @@ def serve_static(filename):
 
     return response
 
+@app.route('/manifest.webmanifest')
+def serve_manifest():
+    response = send_from_directory('static', 'manifest.webmanifest')
+    response.headers['Content-Type'] = 'application/manifest+json'
+    return response
+
+@app.route('/sw.js')
+def serve_service_worker():
+    response = send_from_directory('static', 'sw.js')
+    response.headers['Content-Type'] = 'application/javascript'
+    response.headers['Cache-Control'] = 'no-cache'
+    return response
+
 @app.route('/', methods=['GET', 'POST'])
 # @login_required
 def index():
