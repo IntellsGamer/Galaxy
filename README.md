@@ -38,7 +38,6 @@
 - Copy the example env file:
    - `cp .env.example .env`
 - Set your key values:
-   - `OPENROUTER_API_KEY="your_key_here"` (optional)
    - `LOGIN_USER=username`
    - `LOGIN_PASS=password`
 
@@ -112,16 +111,6 @@ You can use OpenRouter for chat instead of Puter.
 - [ ] Cloud storage integration
 - [ ] Mobile app version
 - [ ] Additional language support
-
-<!-- ## 🤝 Contributing
-
-Galaxy is open to contributions! Whether you want to:
-- Improve the UI/UX
-- Add new features
-- Enhance AI capabilities
-- Fix bugs or improve performance
-
-Check the repository for contribution guidelines. -->
 
 ---
 
